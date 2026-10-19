@@ -1,0 +1,19 @@
+# Local
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist
+dist-ssr
+
+# Test / tooling
+coverage
+.eslintcache
+
+# Dependencies
+node_modules
+
+# Editor/OS noise
+*.local
+*.log

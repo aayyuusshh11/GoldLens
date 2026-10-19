@@ -1,11 +1,17 @@
 import { useEffect, useState } from "react";
 import type { BacktestReportDTO } from "../../types/api";
 import { useReport } from "../../app/ReportContext";
-import { appConfig } from "../../lib/api/config";
 import { HttpClient, buildQuery } from "../../lib/api/client";
 import { ApiRequestError, describeError } from "../../lib/api/errors";
-import { VALIDITY_GATE_MIN_OBSERVATIONS, countStale, dateRangeLabel, gapDaysCount, netWithheldReason, parseSpecChecks } from "../../lib/reportAnalysis";
-import { formatDateShort, formatInt } from "../../lib/formatters/format";
+import {
+  VALIDITY_GATE_MIN_OBSERVATIONS,
+  countStale,
+  dateRangeLabel,
+  gapDaysCount,
+  netWithheldReason,
+  parseSpecChecks,
+} from "../../lib/reportAnalysis";
+import { formatInt } from "../../lib/formatters/format";
 import { PageHeader } from "../../components/layout/PageHeader";
 import { SectionPanel } from "../../components/primitives/SectionPanel";
 import { DataNotice } from "../../components/primitives/DataNotice";
@@ -24,18 +30,18 @@ const REQUIRED_FRAME_COLUMNS = [
   "value_lakhs",
 ] as const;
 
+type ProbeState =
+  | { state: "fixture" | "checking" | "loaded" }
+  | { state: "pending"; error: string };
+
 /**
  * Proposed GET /api/v1/data-quality probe. The route is pending in the
  * contract draft; any failure degrades into a transparent notice and the page
  * falls back to provenance facts the loaded report already carries — which
  * keeps the page useful both before and after the backend ships the route.
  */
-function useDataQualityProbe(baseUrl: string | null): {
-  state: "fixture" | "checking" | "loaded" | "pending" | "error";
-  sources?: unknown;
-  error?: string;
-} {
-  const [state, setState] = useState<{ state: "fixture" | "checking" | "loaded" | "pending" | "error"; sources?: unknown; error?: string }>({
+function useDataQualityProbe(baseUrl: string | null): ProbeState {
+  const [state, setState] = useState<ProbeState>({
     state: baseUrl === null ? "fixture" : "checking",
   });
 
@@ -46,15 +52,14 @@ function useDataQualityProbe(baseUrl: string | null): {
     client
       .getJson<unknown>(`/data-quality${buildQuery({})}`, (raw) => raw)
       .then((sources) => {
-        if (!cancelled) setState({ state: "loaded", sources });
+        if (!cancelled) setState({ state: "loaded" });
+        void sources;
       })
       .catch((error) => {
         if (cancelled) return;
-        const appError = ApiRequestError instanceof Object && error instanceof ApiRequestError ? error : describeError(error);
-        setState({
-          state: "pending",
-          error: appError.message,
-        });
+        const appError =
+          error instanceof ApiRequestError ? error.appError : describeError(error);
+        setState({ state: "pending", error: appError.message });
       });
     return () => {
       cancelled = true;
@@ -67,7 +72,9 @@ function useDataQualityProbe(baseUrl: string | null): {
 function SpecCheckList({ specChecks }: { specChecks: string[] }) {
   const parsed = parseSpecChecks(specChecks);
   if (parsed.length === 0) {
-    return <p className="text-sm text-mute">No specification cross-checks reported for this dataset.</p>;
+    return (
+      <p className="text-sm text-mute">No specification cross-checks reported for this dataset.</p>
+    );
   }
   return (
     <ul className="space-y-2">
@@ -85,9 +92,7 @@ export function DataQualityPage({ report }: { report: BacktestReportDTO }) {
   const { source } = useReport();
   const probe = useDataQualityProbe(source.mode === "live" ? source.config.baseUrl : null);
   const staleCount = countStale(report.spread_observations);
-  const gaps = gapDaysCount(
-    report.spread_observations.map((o) => o.trade_date),
-  );
+  const gaps = gapDaysCount(report.spread_observations.map((o) => o.trade_date));
   const withheld = netWithheldReason(report, report.metrics);
 
   return (
@@ -102,8 +107,8 @@ export function DataQualityPage({ report }: { report: BacktestReportDTO }) {
         <div className="mb-4">
           <DataNotice tone="info" title="GET /api/v1/data-quality is not implemented yet">
             <p>
-              The endpoint is proposed in docs/API_CONTRACT.md but the backend has not
-              shipped it ({probe.error !== undefined ? `probe error: ${probe.error}` : "route missing"}).
+              The endpoint is proposed in docs/API_CONTRACT.md but the backend has not shipped
+              it ({probe.error !== undefined ? `probe error: ${probe.error}` : "route missing"}).
               Everything below is derived from provenance fields in the loaded report.
             </p>
           </DataNotice>
@@ -115,7 +120,9 @@ export function DataQualityPage({ report }: { report: BacktestReportDTO }) {
           <dl className="mt-2 space-y-2 text-sm">
             <div className="flex items-baseline justify-between gap-4">
               <dt className="text-mute">Session range</dt>
-              <dd className="font-mono tabular text-ink">{dateRangeLabel(report.data_provenance.date_range)}</dd>
+              <dd className="font-mono tabular text-ink">
+                {dateRangeLabel(report.data_provenance.date_range)}
+              </dd>
             </div>
             <div className="flex items-baseline justify-between gap-4">
               <dt className="text-mute">Distinct trading days</dt>
@@ -128,14 +135,16 @@ export function DataQualityPage({ report }: { report: BacktestReportDTO }) {
             <div className="flex items-baseline justify-between gap-4">
               <dt className="text-mute">Validity gate</dt>
               <dd className="text-ink">
-                {report.is_valid_backtest ? "passed" : `failed (≥ ${VALIDITY_GATE_MIN_OBSERVATIONS} observations required)`}
+                {report.is_valid_backtest
+                  ? "passed"
+                  : `failed (≥ ${VALIDITY_GATE_MIN_OBSERVATIONS} observations required)`}
               </dd>
             </div>
           </dl>
           <p className="mt-3 text-xs text-mute">
-            Source paths are carried by the backend dataset loader; they appear in the
-            /data-quality route once implemented. The report itself exposes coverage
-            only — the UI does not guess file paths.
+            Source file paths are carried by the backend dataset loader; they will appear in
+            the /data-quality route once implemented. The report itself exposes coverage only —
+            the UI does not guess file paths.
           </p>
         </SectionPanel>
 
@@ -150,8 +159,8 @@ export function DataQualityPage({ report }: { report: BacktestReportDTO }) {
               gaps > 0
                 ? `${formatInt(gaps)} calendar gap(s) > 1 day between plotted sessions (weekends/holidays) — points are not interpolated across them.`
                 : "No calendar gaps beyond weekends in the plotted range.",
-              "Null z / mean / std remain null in tables and charts (rendered 'not computed').",
-              "Rejections are reported in pair.rejections counts rather than being dropped silently.",
+              "Null z / mean / std remain null in tables and charts (rendered \"not computed\").",
+              "Rejections are reported in pair.rejections counts instead of being dropped silently.",
             ]}
           />
           {withheld !== null && (
@@ -165,8 +174,8 @@ export function DataQualityPage({ report }: { report: BacktestReportDTO }) {
 
         <SectionPanel kicker="Contract" title="Columns validated by the quant boundary">
           <p className="text-xs text-mute">
-            The boundary's validate_bhavcopy_frame rejects frames missing any of
-            (docs/DATA_SCHEMA.md):
+            The boundary&apos;s <span className="font-mono">validate_bhavcopy_frame</span> rejects
+            frames missing any of these required columns (docs/DATA_SCHEMA.md):
           </p>
           <ul className="mt-2 flex flex-wrap gap-2">
             {REQUIRED_FRAME_COLUMNS.map((column) => (
@@ -178,8 +187,9 @@ export function DataQualityPage({ report }: { report: BacktestReportDTO }) {
             ))}
           </ul>
           <p className="mt-3 text-xs text-mute">
-            All-zero trading volume or unparsable dates cause a data_quality_rejected
-            error — the app renders that as an explicit error state, not empty content.
+            All-zero trading volume or unparsable dates cause a{" "}
+            <span className="font-mono">data_quality_rejected</span> error — the app renders
+            that as an explicit error state, never as empty content.
           </p>
         </SectionPanel>
       </div>
@@ -191,5 +201,3 @@ export function DataQualityPage({ report }: { report: BacktestReportDTO }) {
     </div>
   );
 }
-
-export { formatDateShort as _dqDateFmt };

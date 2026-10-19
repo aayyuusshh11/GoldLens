@@ -1,0 +1,550 @@
+GOLDLENS — AAYUSH THAKRE
+PHASE-BY-PHASE AI IMPLEMENTATION PROMPTS
+Frontend, Team Lead, Integration, and Demo Workflow
+
+Read `skills.md` completely before modifying the frontend. Treat it as the mandatory design and engineering standard for GoldLens.
+
+First inspect the existing repository, design system, routes, components, API client, and data contracts. Then improve the frontend one page at a time, preserving working functionality and coordinating before changing teammate-owned files.
+
+Aim for a distinctive, polished editorial-finance aesthetic with excellent typography, precise spacing, meaningful data visualization, and restrained visual details. Do not produce a generic AI dashboard. Never invent market data, metrics, API endpoints, or successful backtest results.
+
+Implement real loading, empty, error, stale-data, and insufficient-history states where relevant. Run available checks and report the actual results. Do not claim visual verification unless you performed it.
+
+HOW TO USE THIS FILE
+1. Create/open the GoldLens project repository folder in your AI coding tool (Cursor, Claude Code, Copilot Agent, or similar).
+2. Put these two supplied files somewhere inside the repository:
+   - api.py
+   - api_contract_sample.json
+   The filenames may differ slightly (for example, api(1).py). Prefer renaming them to the names above only after confirming there are no conflicts.
+3. Paste PROMPT 0 first. Let the AI inspect the actual repository and report what exists.
+4. Then paste one phase prompt at a time, in order. Do not paste all phases at once.
+5. After each phase, inspect the changed files and run the verification commands the AI gives you. Do not proceed if the phase has failing tests or unexplained errors.
+6. Commit each working phase on your own feature branch. Do not let the AI overwrite teammates' work or commit directly to the shared main branch.
+7. If the AI claims it ran tests, ask for the exact command and actual output. A confident sentence is not test evidence.
+
+YOUR ROLE
+You are Aayush Thakre, team lead and full-stack developer. Your primary ownership is:
+- React + Vite + TypeScript + Tailwind CSS + shadcn/ui frontend.
+- Dashboard pages: Overview, Pair Explorer, Signal Forensics, Backtest, and Data Quality.
+- Integration of the frontend with the agreed backend API contract.
+- Clear user-facing explanations for signal decisions, especially NO TRADE.
+- Coordinating the schema and API contract with Araham Jain (data/backend) and Aayush S. Kushwaha (quant).
+- Integration checks, usable demo flow, documentation, and deployment readiness.
+
+You are NOT the owner of the quant engine or historical-data ingestion. Do not rewrite their internals to make the UI convenient. Agree on the interface and adapt the frontend to it.
+
+IMPORTANT FACTS ABOUT THE TWO SUPPLIED FILES
+- api.py is a Python quant-module boundary file, not a complete standalone backend. It imports internal modules such as config, contracts, data, engine, metrics, selection, spreads, and zscore. It cannot be assumed to run by itself.
+- api_contract_sample.json is an example output/report, not a live API endpoint and not proof that the data contains a usable backtest.
+- The sample report contains only one trading day (2026-10-16), has no trades, reports a null z-score due to insufficient history, says costs are not configured, and explicitly marks the run as NOT A VALID BACKTEST. The UI must show these limitations honestly.
+- The Python file defines a typed boundary and report DTOs, including fields such as data_provenance, pair, spread_observations, z_score, signals, trades, eligible_contracts, metrics, train_metrics, test_metrics, walk_forward_cmp, verdict, and is_valid_backtest.
+- Do not present the sample JSON as current market data or as a successful trading result.
+- The JSON has a very large eligible_contracts array. The frontend should render it as a filterable/searchable table and must not hardcode the sample's specific contracts or values into application logic.
+- The supplied API boundary file imports other package files that are not included in this two-file handoff. Inspect the repository and coordinate with the backend owner before deciding how to execute it.
+- Do not guess MCX contract specifications, prices, transaction costs, or performance metrics. Do not manufacture historical observations.
+
+GLOBAL RULES FOR EVERY PHASE
+Paste these rules along with each phase if the coding agent tends to ignore constraints:
+- Inspect files and repository state before editing.
+- Preserve existing work. Never replace the project with a fresh scaffold if a project already exists.
+- Do not overwrite, delete, or rename teammate-owned files without explicit approval.
+- Use small, reviewable changes and explain every changed file.
+- Do not invent API endpoints, response fields, historical data, contract specifications, cost assumptions, or successful test results.
+- Use TypeScript types for API payloads. Keep API access in a dedicated client/service layer rather than scattering fetch calls across components.
+- Handle loading, empty, partial, and error states for every data-backed screen.
+- Keep units visible. Rupee P&L must be identified as INR/₹; do not confuse raw spread points with rupee P&L.
+- Distinguish missing values from zero. Null z-score means unavailable, not zero.
+- If the API says NO TRADE, show the exact reason/rationale returned by the backend. Do not relabel it as BUY or SELL.
+- If a report says diagnostics_only or is_valid_backtest=false, make that limitation visually obvious.
+- Do not use a frontend mock as if it were real backend data. If a demo fallback is added, label it “Sample report — not live data” and make it easy to disable.
+- Keep the MVP simple. No paid services, broker integration, complex ML, or unnecessary infrastructure.
+- After every phase, run relevant tests/build and report actual results, failures, and remaining risks.
+
+============================================================
+PROMPT 0 — REPOSITORY RECONNAISSANCE AND SAFE PLAN
+============================================================
+
+You are my senior coding agent for GoldLens. I am Aayush Thakre, team lead and frontend/integration owner.
+
+Before writing or changing code, inspect the current repository and the two files I added: api.py and api_contract_sample.json.
+
+Do the following:
+1. Print/list the repository tree to a sensible depth. Identify the frontend, backend, docs, tests, package managers, existing scripts, environment files, and Git branch/status.
+2. Read the supplied Python file and JSON sample. Do not assume api.py is standalone. List its imports and identify which imported modules/files must exist for it to work.
+3. Inspect package.json, Vite config, TypeScript config, Tailwind/shadcn setup, existing React routes/components, and backend routes if present.
+4. Identify whether docs/DATA_SCHEMA.md and docs/API_CONTRACT.md exist. If they do, read them. If they do not, do not silently invent a final contract yet.
+5. Summarize what is already implemented versus missing. Flag conflicts, duplicated files, and risky assumptions.
+6. Specifically inspect the sample report's provenance, validity status, costs, signals, metrics, and data volume. State that it has one trading day and is not a valid backtest.
+7. Propose a minimal implementation plan for my ownership only: frontend pages, typed API client, loading/error/empty states, integration checks, and demo readiness.
+8. Identify exact dependencies/decisions needed from Araham Jain (backend/API) and Aayush S. Kushwaha (quant schemas/semantics).
+9. Do not edit files in this phase. Do not install packages. Do not claim tests were run unless you actually ran them.
+
+Return:
+- Repository summary.
+- Existing files and responsibilities.
+- Missing dependencies.
+- API/schema questions requiring teammate agreement.
+- Recommended phase sequence.
+- Exact next action.
+
+============================================================
+PROMPT 1 — FREEZE THE FRONTEND/BACKEND CONTRACT
+============================================================
+
+Now create or review the shared integration documentation, but first compare the actual repository, supplied api.py, supplied sample JSON, and existing backend implementation. Do not treat the sample report as the final schema by itself.
+
+Goal: establish a stable interface before building screens.
+
+Tasks:
+1. Inspect docs/DATA_SCHEMA.md and docs/API_CONTRACT.md. If missing, create them only after documenting which fields are supported by existing source code and which remain proposed.
+2. Create a field mapping for the frontend from the report DTOs in api.py:
+   - config
+   - data_provenance
+   - pair
+   - spread_observations
+   - z_score
+   - signals
+   - trades
+   - eligible_contracts
+   - metrics
+   - train_metrics
+   - test_metrics
+   - walk_forward_cmp
+   - verdict
+   - is_valid_backtest
+3. For each field, specify type, nullability, units, date format, meaning, and frontend treatment. In particular:
+   - z_score[].z can be null while history is insufficient.
+   - metrics.net_pnl_rupees, cost fields, Sharpe values, and other metrics may be null.
+   - signal values and reasons must be displayed as returned, not inferred.
+   - is_valid_backtest=false and metrics.status="diagnostics_only" must not be presented as a valid backtest.
+   - eligible_contracts can be a large array.
+4. Compare the proposed endpoint list with actual FastAPI routes. The proposed routes are:
+   GET /api/health
+   GET /api/contracts
+   GET /api/pairs
+   GET /api/pairs/{pair_id}/history
+   POST /api/signals/analyze
+   POST /api/backtests/run
+   GET /api/data-quality
+   Do not claim these exist unless you find them. Record actual route paths and request/response models.
+5. If endpoints do not yet exist, document them as proposed and ask for backend teammate agreement. Do not build the UI around imaginary routes.
+6. Ensure error responses support machine-readable error_code, message, and details when the backend uses QuantAPIError.to_json().
+7. Write a short “frontend integration checklist” with a sample curl command for each confirmed endpoint only.
+8. Do not change quant formulas or backend internals.
+
+Acceptance criteria:
+- Contract documentation clearly separates confirmed behavior from proposed behavior.
+- Every important null and validity state has defined UI behavior.
+- No guessed field types or units are silently presented as facts.
+- Report changed files and unresolved decisions.
+
+============================================================
+PROMPT 2 — FRONTEND FOUNDATION AND ROUTING
+============================================================
+
+Implement only the frontend foundation using the existing project setup. Do not replace an existing app with a new scaffold.
+
+Required stack: React, Vite, TypeScript, Tailwind CSS, shadcn/ui, and Recharts, using already-installed dependencies where possible.
+
+Tasks:
+1. Create or complete a clean application shell with responsive navigation for:
+   - Overview
+   - Pair Explorer
+   - Signal Forensics
+   - Backtest
+   - Data Quality
+2. Use the existing routing solution if one exists. If none exists, choose the smallest sensible routing approach and explain the choice before adding dependencies.
+3. Create reusable UI patterns for page title/description, KPI cards, status badges, empty states, loading skeletons, error panels, data tables, and explanatory tooltips.
+4. Establish a consistent dark/light styling approach only if the current project already supports it or it is low-cost to implement. Prioritize readability over decorative animation.
+5. Make the layout responsive for laptop and mobile widths. Tables must remain usable with horizontal overflow or a deliberate compact layout.
+6. Add accessible labels, keyboard navigation, visible focus states, and appropriate contrast.
+7. Use no fake performance numbers or invented live market data. Until the API integration exists, use explicit empty/loading states rather than fabricated cards.
+8. Do not create unnecessary pages, authentication, user management, or broker controls.
+
+Tests/checks:
+- Run the existing frontend test command, if any.
+- Run the production build.
+- Fix TypeScript/build errors introduced by your changes.
+- Report exact commands and results.
+
+Acceptance criteria:
+- All five navigation areas open correctly.
+- The app builds.
+- No broken links or console errors caused by this phase.
+- No fabricated trading metrics appear.
+
+============================================================
+PROMPT 3 — TYPED API CLIENT AND REPORT ADAPTER
+============================================================
+
+Implement the frontend integration layer. First verify the confirmed API contract and actual backend route paths. If the backend endpoints are not ready, implement the client against the agreed contract and clearly report that live integration remains blocked; do not invent a route.
+
+Tasks:
+1. Create a dedicated API client/service folder, for example src/lib/api/ or the convention already used in the project.
+2. Define TypeScript types for the confirmed API request/response payloads. Match backend field names exactly. Do not rename fields at the transport boundary.
+3. Add a configurable API base URL using the project's environment convention, such as VITE_API_BASE_URL, with a safe documented local default only if the backend setup confirms it.
+4. Add a small fetch wrapper that:
+   - handles non-2xx responses;
+   - parses JSON safely;
+   - preserves error_code, message, and details if returned;
+   - reports network failures distinctly from server validation errors;
+   - supports request cancellation/timeouts only if implemented simply and correctly.
+5. Create typed functions only for confirmed endpoints. Do not create a function that claims an unimplemented endpoint works.
+6. Add a report adapter/presentation helper if needed. Keep the raw API DTO distinct from derived UI formatting.
+7. Add tests for:
+   - successful response parsing;
+   - null numeric fields;
+   - malformed JSON;
+   - network/HTTP errors;
+   - validation error payloads;
+   - empty arrays;
+   - invalid-backtest/diagnostics-only report handling.
+8. Ensure missing values render as “Not available” or an equivalent label, never as zero. Ensure date parsing does not shift dates because of timezone conversion.
+9. Add .env.example only if appropriate, containing placeholders rather than secrets.
+10. Document how to point the frontend at the backend.
+
+Acceptance criteria:
+- Components do not make scattered ad-hoc fetch calls.
+- TypeScript types match the agreed contract.
+- API errors are visible and useful.
+- Tests cover failure paths, not just the happy path.
+- State what remains blocked by backend implementation.
+
+============================================================
+PROMPT 4 — OVERVIEW PAGE
+============================================================
+
+Build the Overview page using real API responses from confirmed endpoints. If no usable endpoint is available yet, build the structure with clear “Backend not connected” or “No report loaded” states; do not invent data.
+
+The page should help a judge understand the project in under one minute.
+
+Required content:
+1. A concise GoldLens description: research and analytics for relative value across comparable MCX gold futures contracts.
+2. Data status: source/provenance, date range, distinct trading days, and available data-quality summary when supplied.
+3. Latest analysis status: selected pair, as-of/trade date, decision, z-score availability, and main rationale when supplied.
+4. Backtest status: valid/invalid/diagnostics-only, number of observations, number of trades, gross P&L, net P&L only if supplied, costs status, and warnings.
+5. Clear “NO TRADE” presentation when returned by the backend. Explain the returned reason, such as insufficient rolling history, rather than implying a missed profit.
+6. A visible warning when the dataset is too short to support a valid backtest.
+7. Links/actions into Pair Explorer, Signal Forensics, Backtest, and Data Quality.
+
+Rules:
+- Do not show null as 0.
+- Do not show net P&L if costs are not configured and the API withholds it.
+- Never call a diagnostics-only report “successful” or “profitable”.
+- Never label the sample JSON as live/current data.
+- Avoid meaningless gauge charts and fake market sentiment indicators.
+- Use Recharts only when real series data supports a meaningful chart.
+
+Acceptance criteria:
+- The page is useful when data exists and honest when it does not.
+- Every displayed KPI has a defined source field and unit.
+- Invalid/insufficient history warnings are hard to miss.
+- Build and tests pass.
+
+============================================================
+PROMPT 5 — PAIR EXPLORER
+============================================================
+
+Build Pair Explorer around verified, backend-provided contract pairs and historical spread observations. Do not create pair choices by guessing from symbols.
+
+Required behavior:
+1. Load available pairs/contracts from confirmed endpoints.
+2. Show pair identity and the near/far expiries or other pair metadata returned by the backend.
+3. Display a historical spread series using spread_observations with trade_date and spread. Use Recharts only when there are enough actual observations to make a useful plot.
+4. Show near_close, far_close, stale status, and date for the selected observation when available.
+5. Display missing or stale observations clearly. Do not interpolate missing prices or turn stale flags into normal observations.
+6. Provide useful date/pair filters only when supported by the data and API.
+7. Make clear that a spread is not automatically a rupee P&L or a guaranteed opportunity.
+8. Show contract eligibility/rejection reasons where available.
+9. Handle no eligible pair, no history, unknown pair, backend errors, and loading states.
+
+Important sample-specific behavior:
+- The supplied sample has one spread observation for GOLDM on 2026-10-16. That is not enough to draw a meaningful historical trend or calculate a valid rolling signal.
+- Do not hardcode GOLDM or its sample expiries into normal application logic. They may appear only in a clearly labeled sample-report preview, if such a preview is explicitly implemented.
+
+Acceptance criteria:
+- Pair selection is driven by the API.
+- Charts use only returned observations.
+- Stale/missing values remain visible as quality issues.
+- No fabricated spread history appears.
+
+============================================================
+PROMPT 6 — SIGNAL FORENSICS
+============================================================
+
+Build Signal Forensics so users can inspect why the strategy produced a signal or NO TRADE. The goal is explainability, not a decorative BUY/SELL dashboard.
+
+Use the actual signals and z_score fields returned by the backend.
+
+Required content:
+1. Trade date, pair/contract identity, spread, rolling mean, rolling standard deviation, z-score, filters_ok, filter_reason, position_before, signal, rationale, and no_trade_reason where supplied.
+2. Show null z-score/mean/std as “Unavailable” and explain the backend reason if provided.
+3. Display filter failures and data-quality warnings separately from the statistical signal.
+4. Explain the difference between:
+   - no statistical signal because history is insufficient;
+   - a candidate rejected by expiry/liquidity/data-quality filters;
+   - an explicit NO TRADE result.
+   Only make distinctions supported by returned fields.
+5. If the backend returns a reason code, preserve it. A readable label may be added without removing the original code.
+6. Make the final decision visually prominent but not misleading.
+7. Do not derive a new signal in the browser or reverse-engineer strategy rules from one sample.
+8. Add a timeline/table for signals across dates if multiple real rows exist.
+
+Test cases:
+- z is null due to insufficient history.
+- filters_ok=false.
+- filters_ok=true but signal is NO TRADE.
+- valid signal returned by backend.
+- missing rationale or optional fields.
+- empty signals array.
+
+Acceptance criteria:
+- The user can trace the decision to returned fields and reasons.
+- NO TRADE is treated as a legitimate outcome.
+- No browser-side formula silently overrides the backend decision.
+
+============================================================
+PROMPT 7 — BACKTEST PAGE AND HONEST METRICS
+============================================================
+
+Build the Backtest page using the actual BacktestReportDTO-compatible payload. Do not implement new strategy logic in React.
+
+Required sections:
+1. Run configuration: lookback_days, z_entry, z_exit, stop_z, max_holding_days, min_hist_days, exec_mode, allow_overlap, lots_per_leg, walk_forward_folds, and costs status when supplied.
+2. Validity banner using is_valid_backtest and verdict.
+3. Metrics: n_days, n_trades, gross_pnl_rupees, net_pnl_rupees, win_rate, max_drawdown_rupees, net_max_drawdown_rupees, sharpe_ratio, net_sharpe_ratio, total_cost_rupees, avg_pnl_per_trade, notes, and costs_assumption.
+4. Trades table using returned trade fields: leg_symbol, direction, entry/exit dates, entry/exit spreads, rationale, exit reason, gross P&L, and holding days.
+5. Train/test metrics and walk-forward comparison when returned.
+6. Warnings and assumptions shown close to the relevant metrics, not hidden at the bottom.
+7. A Run Backtest form only if POST /api/backtests/run and its request schema are confirmed. Validate inputs against the backend schema. Show the server's validation error details.
+8. Do not imply that gross P&L is net profit. If costs are missing, show net metrics as unavailable and explain why.
+9. Never treat null metrics as zero. Do not calculate an unofficial Sharpe ratio or drawdown in the browser.
+
+Sample JSON must be represented honestly:
+- trading_days = 1;
+- n_days in metrics = 1;
+- n_trades = 0;
+- z-score unavailable;
+- costs are not configured;
+- status is diagnostics_only;
+- is_valid_backtest = false;
+- verdict says NOT A VALID BACKTEST.
+If the sample is used for a demo preview, display a persistent “Sample report — not live data; one trading day; not a valid backtest” label.
+
+Acceptance criteria:
+- Validity status cannot be missed.
+- All money fields are labeled ₹/INR.
+- Gross/net distinction is explicit.
+- Trade table handles no trades cleanly.
+- Walk-forward/train/test sections handle null or empty data safely.
+
+============================================================
+PROMPT 8 — DATA QUALITY PAGE
+============================================================
+
+Build Data Quality around actual validation/provenance outputs, not guessed quality scores.
+
+Required content where the API supports it:
+1. Source files/provenance, date range, number of trading days, row counts, and import status.
+2. Contract-specification checks and their PASS/FAIL messages.
+3. Missing/invalid dates, invalid prices, stale rows, duplicate rows, rejected rows, and other quality findings only if the backend returns these measurements.
+4. Eligible and ineligible contracts with their exact reason strings.
+5. Search/filter/sort for eligible_contracts because the supplied example has a large array.
+6. Clear distinction between:
+   - unknown/unverified symbol;
+   - expiry too close or too far;
+   - insufficient volume/open interest/value;
+   - missing or invalid data.
+   Render only reasons actually returned; do not infer new rejections from a symbol name.
+7. Explain that missing values are not zero and that a passing specification cross-check is evidence for that check only, not proof of the entire dataset.
+8. Handle absent spec_checks as “No specification checks reported”, not “All checks passed”.
+
+Performance:
+- Avoid rendering an enormous unfiltered table if the list becomes large.
+- Use pagination or simple client-side filtering/sorting appropriate to the dataset size and existing libraries.
+- Do not add a complex grid dependency without need.
+
+Acceptance criteria:
+- Data limitations are understandable to a non-quant judge.
+- Every PASS/FAIL label comes from source data.
+- Large contract lists remain usable.
+- Missing quality fields are not falsely reported as clean.
+
+============================================================
+PROMPT 9 — INTEGRATION WITH ARAHAM'S BACKEND AND KUSHWAHA'S QUANT MODULE
+============================================================
+
+Perform a controlled integration pass. Do not modify another teammate's implementation without coordinating first.
+
+Tasks:
+1. Check the latest shared docs/DATA_SCHEMA.md and docs/API_CONTRACT.md.
+2. Compare the actual FastAPI routes and Pydantic models with the frontend TypeScript types.
+3. Compare the backend response with the DTOs and serializer behavior in the supplied api.py. Confirm actual JSON field names and nullability.
+4. Confirm how the backend calls the quant boundary functions:
+   - load_dataset(...)
+   - compute_eligible_contracts(...)
+   - compute_spreads(...)
+   - compute_zscores(...)
+   - run_strategy_backtest(...)
+   Do not assume these functions can be called without their required package modules and configuration.
+5. Confirm whether the backend response wraps the report in an envelope or returns the report directly. Adapt only to the agreed actual shape.
+6. Confirm CORS configuration for local frontend/backend development. Do not disable browser security as a workaround.
+7. Verify date handling, error payloads, base URL configuration, and request methods.
+8. Test the frontend against a running local backend using real responses from the available dataset.
+9. Verify the sample report is never mistaken for a live API response.
+10. Write an integration note listing confirmed endpoints, commands, expected responses, and known blockers.
+
+If a mismatch exists:
+- Identify the exact field/route mismatch.
+- Propose the smallest compatible fix.
+- Do not silently change both sides or redefine units.
+- Ask which teammate owns the correction if ownership is unclear.
+
+Acceptance criteria:
+- At least one real end-to-end path works if backend and data are available.
+- Otherwise, clearly document the exact blocker and provide reproducible evidence.
+- No fake success message or fabricated data is used to make the demo look connected.
+
+============================================================
+PROMPT 10 — TESTING, ACCESSIBILITY, AND FAILURE STATES
+============================================================
+
+Run a focused quality pass across the frontend and integration layer.
+
+Test the following:
+1. API unavailable/network failure.
+2. HTTP 4xx validation error with error_code/message/details.
+3. HTTP 5xx error.
+4. Empty contracts/pairs/history/signals/trades arrays.
+5. Null z-score, mean, standard deviation, net P&L, Sharpe, and cost values.
+6. One-day report with is_valid_backtest=false.
+7. Diagnostics-only metrics.
+8. Very large eligible_contracts list.
+9. Long rationale/reason strings.
+10. Stale observations and failed spec checks.
+11. Mobile viewport/navigation and table overflow.
+12. Keyboard navigation, focus visibility, accessible form labels, and chart/table text alternatives.
+
+Tasks:
+- Use the test tooling already present. Add a lightweight test library only if the project lacks one and the choice is justified.
+- Add component/service tests for the most important edge cases.
+- Run lint/typecheck/test/build scripts that actually exist.
+- Fix regressions caused by this phase.
+- Do not claim a browser test was run unless the relevant browser test tool was actually available and executed.
+- Record failures that cannot be fixed without backend or quant changes.
+
+Acceptance criteria:
+- No critical console/runtime errors in tested flows.
+- Null and error states are readable.
+- Tests and build results are reported accurately.
+- Remaining limitations are explicit.
+
+============================================================
+PROMPT 11 — DEMO MODE, DOCUMENTATION, AND PRESENTATION FLOW
+============================================================
+
+Prepare a reliable hackathon demo without pretending incomplete analytics are production-ready.
+
+Tasks:
+1. Create a short README section for the frontend: prerequisites, install, environment variables, dev server, tests, production build, and backend connection.
+2. Add a demo script for a 3–5 minute walkthrough:
+   - Overview and data status.
+   - Pair Explorer and spread observations.
+   - Signal Forensics and why NO TRADE can be correct.
+   - Backtest validity, costs, and limitations.
+   - Data Quality and contract rejection reasons.
+3. If a sample-report preview is necessary because no backend is available, make it opt-in and label it persistently as sample data. Do not mix it with live API state.
+4. Ensure the demo never presents the one-day sample as a valid backtest, never claims costs are included when absent, and never presents gross P&L as net P&L.
+5. Add a troubleshooting section for API base URL, backend not running, CORS, missing environment file, and missing dataset.
+6. Keep the app local-first unless deployment is explicitly required. Do not introduce paid APIs, broker credentials, or unnecessary cloud services.
+7. Check that the repository does not contain secrets, credentials, or large generated artifacts.
+8. Provide exact start commands for frontend and backend based on the actual repository scripts, not guesses.
+
+Acceptance criteria:
+- A teammate can start the app using the README.
+- The demo flow can be completed without unexplained dead ends.
+- All sample/diagnostic limitations are visible.
+- No unsupported claims about profitability or live data.
+
+============================================================
+PROMPT 12 — FINAL REVIEW AND HANDOFF
+============================================================
+
+Perform a final review of my GoldLens frontend/integration work. Do not make large refactors during the final review.
+
+Tasks:
+1. Inspect Git diff and status. List every changed/added/deleted file and explain why it changed.
+2. Run the available typecheck, lint, test, and production build commands. Include actual commands and pass/fail output summaries.
+3. Check for TODOs, fake data, hardcoded sample values, broken links, missing error states, console errors, and unhandled nulls.
+4. Verify that API contracts match the latest agreed docs and actual backend.
+5. Verify the five required areas exist:
+   - Overview
+   - Pair Explorer
+   - Signal Forensics
+   - Backtest
+   - Data Quality
+6. Confirm the sample report's one-day history, missing z-score, absent costs, zero trades, diagnostics-only status, and invalid-backtest verdict are handled honestly.
+7. Write/update the frontend integration README with exact commands and known limitations.
+8. Do not commit or push unless I explicitly request it. If I ask for a commit, use my feature branch, not main.
+9. Provide the exact handoff for Araham Jain and Aayush S. Kushwaha, including any schema or endpoint decisions they must confirm.
+10. Provide the next action for me as team lead.
+
+Final report format:
+- Summary.
+- Changed files.
+- Commands run and actual results.
+- End-to-end path verified or exact blocker.
+- Known limitations.
+- Handoff to Araham.
+- Handoff to Kushwaha.
+- Suggested commit message.
+- One immediate next step.
+
+============================================================
+QUICK TROUBLESHOOTING PROMPTS
+============================================================
+
+If the AI begins coding before inspecting:
+“Stop. Revert only the unreviewed changes you just made if safe to do so, inspect the repository and Git diff, and return to the current phase instructions. Do not delete existing work.”
+
+If the AI invents endpoints:
+“Show me the actual FastAPI route definitions and Pydantic request/response models that prove this endpoint exists. If you cannot find them, mark the endpoint as proposed and do not claim it works.”
+
+If the AI fabricates metrics:
+“Remove any invented market values, spreads, z-scores, P&L, Sharpe ratios, and trade outcomes. Use only actual API data or an explicitly labeled sample report. Preserve nulls and validity warnings.”
+
+If the AI says tests passed without evidence:
+“Run the exact test/build command now and show the real terminal result. If you cannot execute commands in this environment, state that verification was not performed.”
+
+If the frontend contract does not match backend:
+“Do not silently rename fields or guess units. Compare the frontend type, API contract documentation, actual route/model, and returned JSON. Report the precise mismatch and identify the owner before changing the contract.”
+
+If the AI tries to build everything at once:
+“Stop and implement only the current phase. Keep the diff small, run its verification, and wait for my next phase prompt.”
+
+If the app only shows an empty dashboard:
+“Trace the path from the UI component to the API client, configured base URL, actual backend route, and response. Report where the path breaks. Do not solve it by inserting fake data.”
+
+============================================================
+SUGGESTED GIT WORKFLOW
+============================================================
+
+Use your actual repository name and branch naming convention. Example only:
+
+git status
+git switch -c feat/aayush-frontend-integration
+# Work on one phase at a time.
+git diff --check
+git diff
+# After verifying a phase:
+git add <reviewed-files>
+git commit -m "feat(frontend): add GoldLens analytics dashboard"
+git status
+
+Never run destructive Git commands such as reset --hard, clean -fd, or mass checkout commands unless you fully understand the impact and explicitly approve them. Never commit another teammate's unreviewed files.
+
+============================================================
+END OF PROMPT PACK
+============================================================
+
+Working principle: the interface must explain the evidence, not manufacture confidence. A correct NO TRADE and an honestly invalid backtest are better than a beautiful dashboard lying to the judges.

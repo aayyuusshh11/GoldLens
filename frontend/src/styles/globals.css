@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-base text-ink antialiased;
+  }
+
+  ::selection {
+    background: rgba(199, 164, 91, 0.35);
+  }
+
+  /* Visible, high-contrast keyboard focus everywhere (SKILLS.md). */
+  :focus-visible {
+    outline: 2px solid rgba(199, 164, 91, 0.85);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  .skip-link {
+    @apply sr-only;
+  }
+
+  .skip-link:focus {
+    @apply not-sr-only fixed left-2 top-2 z-50 rounded-lg border border-gold bg-elevated px-4 py-2 text-sm text-ink;
+  }
+}
+
+@layer utilities {
+  .skeleton {
+    @apply rounded-lg bg-elevated/70;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .skeleton {
+      animation: skeleton-pulse 1.6s ease-in-out infinite;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

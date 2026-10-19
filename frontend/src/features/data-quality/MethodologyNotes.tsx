@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { SectionPanel } from "../../components/primitives/SectionPanel";
 import { ReasonList } from "../../components/primitives/ReasonList";
 
