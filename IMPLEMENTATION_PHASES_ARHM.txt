@@ -1,0 +1,116 @@
+GOLDLENS — ARHM JAIN IMPLEMENTATION PROMPTS
+Data Engineering • Contract Registry • FastAPI • Storage
+Use this file as a sequence of prompts. Run only one phase at a time in your coding AI.
+
+GLOBAL RULES FOR EVERY PHASE
+- First inspect the current working directory, Git status, branch, existing files, and project instructions. Do not overwrite existing work.
+- Work only in Arhm's feature branch. Do not commit to main.
+- Treat the supplied CSV as a single-day snapshot until more dates are provided.
+- Never invent market observations or contract specifications. Never infer contract size/purity/quote units from symbol names.
+- Keep missing values null; do not convert missing OHLC to zero. A reported zero volume is not the same as missing volume.
+- Preserve source provenance and report rows accepted, rejected, and warned.
+- Do not claim a command or test passed unless you ran it and inspected its result.
+- Before changing shared schemas, compare docs/DATA_SCHEMA.md and docs/API_CONTRACT.md and coordinate with Aayush Thakre (frontend/integration) and Aayush S. Kushwaha (quant).
+- If the repo already has equivalent files, extend them carefully rather than duplicating or replacing them.
+- At the end of every phase, report: changed files, commands run, test output, known issues, and the exact next handoff.
+
+PHASE 0 — REPOSITORY AND DATA RECONNAISSANCE
+Prompt:
+“Inspect the repository before editing. Show the current path, Git branch/status, file tree (depth 3), existing README/docs/backend code, Python version, and installed dependencies. Locate the provided file BhavCopyDateWise_16102026 (2).csv if it is present, without copying or moving it unnecessarily. Inspect its columns, row count, dates, instrument types, symbol whitespace, duplicate keys, missing values, zero-volume rows, and futures rows for GOLD/GOLDM/GOLDTEN/GOLDGUINEA/GOLDPETAL. Produce docs/DATA_AUDIT.md with measured findings and limitations. Do not implement endpoints yet. Do not infer specifications from symbols. Run no destructive commands.”
+
+Acceptance:
+- Existing work is preserved.
+- Audit explicitly says the supplied file has 15,535 rows, 15 columns, and one date (16 Oct 2026), if the same input file is being audited.
+- Audit distinguishes the 168 FUTCOM rows from options and other instrument types.
+- Audit says one date is insufficient for rolling z-scores and walk-forward backtesting.
+- Any changed counts are recomputed from the actual file, not hardcoded.
+
+PHASE 1 — AGREE SCHEMAS AND API CONTRACT
+Prompt:
+“Create or update docs/DATA_SCHEMA.md and docs/API_CONTRACT.md after checking existing project files. Define Pydantic types for source observations, normalized observations, contract registry records, data-quality reports, pair history, signal analysis requests/responses, and backtest requests/responses. Specify types, nullability, date formats, units, reason codes, warnings, and error format. Preserve source columns and raw source values where useful. Clearly mark contract specifications as verified/unverified and include source provenance/effective dates. Do not assert any contract size or unit unless a verified source exists. Coordinate field names with the frontend and quant owner; list any decisions still requiring their confirmation.”
+
+Acceptance:
+- `trade_date` and `expiry_date` use ISO dates in API payloads.
+- OHLC and settlement are nullable numbers.
+- Volume quantity and unit are separate fields where parsing is reliable.
+- Signal response includes pair_id, as_of_date, spread, z_score, gross_edge, estimated_cost, net_edge, decision, reason_codes, and data_quality.
+- Backtest response includes run_id, pair_id, evaluation period, strategy version, observation count, completed trades, gross P&L, estimated costs, net P&L, max drawdown, assumptions, and warnings.
+- Unknown fields are not fabricated.
+
+PHASE 2 — BUILD VALIDATED CSV INGESTION
+Prompt:
+“Implement a small, testable CSV ingestion service for the actual supplied bhavcopy file. Inspect the real file and existing code first. Validate required columns, parse trade/expiry dates, trim symbol whitespace while retaining original symbol, parse numeric columns safely, preserve nulls, and retain source_file/source_row. Separate FUTCOM futures from OPTFUT/OPTIDX/FUTIDX. Do not discard unsupported rows silently: report counts and reasons. Do not use close values on zero-volume rows as evidence of tradability. Add a CLI command or script to ingest a file and print a concise validation report. Do not synthesize historical data.”
+
+Tests:
+- valid input
+- missing required column
+- malformed date
+- nonnumeric value
+- blank/whitespace symbol
+- missing OHLC
+- zero volume
+- option row excluded from gold futures path
+- source row/provenance retained
+
+Acceptance:
+- Running the command against the provided file completes or reports a specific actionable failure.
+- Report shows input row count, futures row count, options/other counts, invalid rows, missing OHLC counts, zero-volume counts, unique dates, and symbols.
+- Missing values remain null.
+- A repeat ingestion produces stable normalized records.
+
+PHASE 3 — STORAGE AND CONTRACT REGISTRY
+Prompt:
+“Implement a lightweight local DuckDB storage layer unless the repository already has a sensible lightweight database. Make ingestion idempotent using a documented business key and unique constraints or deterministic upsert logic. Store normalized observations separately from contract registry records. Contract registry must support unknown/unverified specification fields and provenance/effective dates. Seed only canonical symbols observed in the source file; do not populate guessed sizes, purity, quotation units, tick sizes, or expiry rules. Provide a report of contracts requiring authoritative specification verification. Add tests for repeat ingestion, duplicate observations, nullable values, and registry provenance.”
+
+Acceptance:
+- Raw source file is not modified.
+- Processed database can be rebuilt from input.
+- Re-ingestion does not create duplicate observations.
+- No guessed contract specs are inserted.
+- Local generated database/data artifacts are excluded from Git unless the team explicitly decides otherwise.
+
+PHASE 4 — DATA-QUALITY SERVICE
+Prompt:
+“Implement a data-quality service and GET /api/data-quality endpoint. Report file/ingestion status, dates available, row counts, duplicate business keys, invalid OHLC ranges (high below low, etc.), missing OHLC/settlement, zero and missing volume, zero open interest, unknown units, unsupported instrument types, unverified contract specifications, and whether enough chronological observations exist for the requested analysis. Include severity, count, and actionable reason codes. Do not silently repair data. Use the real ingested data.”
+
+Acceptance:
+- Response is stable and documented.
+- Zero volume and missing volume are distinct.
+- Data quality does not claim multi-day history when only one date exists.
+- Contract spec verification status is visible.
+
+PHASE 5 — FASTAPI ENDPOINTS
+Prompt:
+“Implement FastAPI endpoints from docs/API_CONTRACT.md: GET /api/health, GET /api/contracts, GET /api/pairs, GET /api/pairs/{pair_id}/history, POST /api/signals/analyze, POST /api/backtests/run, and GET /api/data-quality. Keep route handlers thin and put business logic in services. Use Pydantic request/response models, predictable HTTP errors, and a local configuration approach. For signal/backtest requests, return a structured insufficient-data/NO TRADE outcome if the required verified observations are not available; do not fabricate a spread history or performance metrics. Do not implement quant formulas independently if Aayush S. Kushwaha owns them—agree the service interface and wire it cleanly.”
+
+Acceptance:
+- OpenAPI docs load.
+- Health endpoint returns a simple healthy response.
+- Contracts/data-quality endpoints return real stored information.
+- Pair history is empty or explicitly unavailable if there is no suitable historical series.
+- Signal/backtest routes clearly report insufficient history instead of fake results.
+- API response types match the shared contract.
+
+PHASE 6 — TESTING, HARDENING, AND INTEGRATION
+Prompt:
+“Run all backend tests and add edge-case tests for empty files, bad encodings, missing required columns, duplicate rows/business keys, bad dates, malformed units, all-null OHLC, zero volume, unsupported instruments, unverified specs, and one-date history. Run formatter/linter if configured. Check route responses against docs/API_CONTRACT.md. Do not weaken tests to get a green run. Fix root causes and report exact commands and results.”
+
+Acceptance:
+- Tests pass, or failures are accurately listed with causes.
+- No unverified spec is presented as fact.
+- One-date history cannot generate a claimed walk-forward backtest.
+- No look-ahead-prone API behavior is introduced.
+
+PHASE 7 — HANDOFF TO TEAM
+Prompt:
+“Update docs/HANDOFF_ARHM.md with implementation status, changed files, how to install and run the backend, how to ingest the supplied CSV, database location, endpoints, example requests/responses, test commands/results, current limitations, and known bugs. Identify the exact stable schema and API contract frontend can consume. Identify quant service integration points and decisions needed from Aayush S. Kushwaha. Do not claim completion of work that was not performed. Provide concise Git commit/PR instructions without committing to main.”
+
+Required final report:
+1. What is implemented.
+2. What tests were actually run and their results.
+3. Commands to run locally.
+4. Changed files.
+5. Remaining risks/limitations.
+6. Exact frontend handoff to Aayush Thakre.
+7. Exact quant handoff to Aayush S. Kushwaha.
+8. Branch name and commit hash, only if actually created.
