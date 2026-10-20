@@ -1,0 +1,75 @@
+{
+  "observed_sessions": [
+    "2026-10-16",
+    "2026-10-19"
+  ],
+  "observed_count": 2,
+  "candidate_trading_days_first_observed_to_end": 3,
+  "acquired": 2,
+  "missing_count": 1,
+  "missing_dates": [
+    {
+      "date": "2026-10-20",
+      "weekday": "Tue",
+      "partial_holiday": true,
+      "holiday_name": "Dassera",
+      "session_note": "morning closed, evening session may trade (bhavcopy may still exist)"
+    }
+  ],
+  "calendar_sources": [
+    "https://www.mcxindia.com/market-operations/trading-surveillance/trading-holidays (accessed 2026-10-20)",
+    "Corroborated: Times of India MCX holidays 2026; ICICI Direct; BSE commodity segment list"
+  ],
+  "calendar_limit": "Covers calendar year 2026 only; exchange may alter holidays by circular. Dates outside 2026 are calendar_unverified, not trading days.",
+  "exhaustive_claim": false,
+  "note": "missing_dates lists weekdays (minus 2026 official full holidays) with no bhavcopy on disk. It is NOT exhaustive: unlisted exchange circulars, technical outages, or non-2026 calendar gaps may add sessions; each downloaded file is validated on import.",
+  "file_inventory": [
+    {
+      "file": "BhavCopyDateWise_16102026 (2).csv",
+      "sha256": "97fb1028bca988d13ecf47895253feb9537c6700f6cd09ce4927d9b623f9a53e",
+      "size_bytes": 1918268,
+      "imported": true
+    },
+    {
+      "file": "BhavCopyDateWise_16102026.csv",
+      "sha256": "74a1e5a66faad9e8aa6d71210be9cc653a2e9672a733ba1c1107539171d5ef66",
+      "size_bytes": 1918268,
+      "imported": true
+    },
+    {
+      "file": "BhavCopyDateWise_19102026.csv",
+      "sha256": "f5ae9c5a32c163c3116f3db0d442a06c8aedb43476f1249126840509e138263c",
+      "size_bytes": 1924973,
+      "imported": true
+    }
+  ],
+  "pair_requirements": [
+    {
+      "pair_id": "GOLDM_near20261204_far20270105",
+      "near_expiry": "2026-12-04",
+      "far_expiry": "2027-01-05",
+      "shared_valid_observations": 2,
+      "floor_min": 30,
+      "recommended_min": 100,
+      "z_warmup_min": 15,
+      "walkforward_min": 70,
+      "unmet": [
+        "floor",
+        "z_warmup",
+        "walkforward"
+      ]
+    }
+  ],
+  "checklist": [
+    "## Per-file validation checklist (run for EVERY new download)",
+    "1. Filename follows `BhavCopyDateWise_<DDMMYYYY>.csv`; never overwrite an existing file (conflict -> sidecar).",
+    "2. Record SHA-256 and size; append to `data/raw/mcx/manifest_imported.json` (status `verified_imported`).",
+    "3. File opens as CSV; `TRD_DATE` parses to a single distinct trading date.",
+    "4. Row counts: raw rows vs FUTCOM rows (options excluded from observations, recorded, not counted).",
+    "5. Duplicate composite keys (symbol/expiry/type/date) resolved by conflict-aware dedup; investigate increases.",
+    "6. Blank/invalid close prices flagged (kept, never imputed).",
+    "7. Expiry dates parse; spread pairs keep near < far ordering.",
+    "8. Re-run: py -3.13 quant/run_quant.py  &&  py -3.13 -m quant.ingestion.generate_reports",
+    "9. Confirm reports did not double-count sessions (deterministic counts)."
+  ]
+}

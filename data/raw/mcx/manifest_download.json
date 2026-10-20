@@ -1,0 +1,19 @@
+{
+  "source": "mcx_website_datewise",
+  "start_date": "2026-10-16",
+  "end_date": "2026-10-16",
+  "attempts": [
+    {
+      "trade_date": "2026-10-16",
+      "planned_url": "https://www.mcxindia.com/MarketData/GetDateWiseBhavCopy?InstrumentName=ALL&fromDate=16/10/2026",
+      "status": "manual_required",
+      "sha256": null,
+      "size_bytes": null,
+      "path": null,
+      "retries": 0,
+      "error": "HTTP 403, browser-like response (access control/HTML page)",
+      "checked_at": "2026-10-20T12:10:28Z",
+      "content_type": null
+    }
+  ]
+}

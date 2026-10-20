@@ -1,0 +1,58 @@
+{
+  "generated_at": "2026-10-20T16:04:16Z",
+  "verdict": "NOT READY",
+  "metrics": {
+    "distinct_trading_sessions": 2,
+    "valid_dated_spread_observations_by_pair": {
+      "GOLDM_near20261204_far20270105": 2
+    },
+    "unique_eligible_contract_pairs": [
+      "GOLDM_near20261204_far20270105"
+    ],
+    "unique_eligible_contract_pairs_count": 1,
+    "observations_available_for_rolling_z": 2,
+    "observations_available_before_decision_max": 2,
+    "actual_walk_forward_evaluation_dates": 0,
+    "trades_generated_by_engine": 0,
+    "min_hist_days_required": 15,
+    "min_spread_observations_floor": 30,
+    "recommended_observations": 100
+  },
+  "gates": [
+    {
+      "gate": "dataCoverage",
+      "verdict": "OK",
+      "measured": "2 distinct trade date(s), 336 cleaned FUTCOM rows, 29 symbols",
+      "requirement": "at least 1 trading day loaded from exchange files"
+    },
+    {
+      "gate": "minSpreadObservations",
+      "verdict": "NOT OK",
+      "measured": "2 valid dated spread session(s) vs floor 30 / recommended 100",
+      "requirement": ">= 30 eligible spread sessions"
+    },
+    {
+      "gate": "walkForwardViability",
+      "verdict": "NOT OK",
+      "measured": "not viable with 2 observation(s) (requires >= 100 sessions for walk-forward)",
+      "requirement": ">= 100 sessions to split train/validation and run the configured 3 walk-forward folds honestly"
+    },
+    {
+      "gate": "costInputsVerified",
+      "verdict": "NOT OK",
+      "measured": "verified 5/7 cost inputs (unverified: brokerage_rupees_per_lot (broker contract note required), slippage_ticks (execution-policy decision, must come from trader))",
+      "requirement": "brokerage, exchange transaction charges and statutory taxes verified against broker schedule / exchange circular / statute"
+    },
+    {
+      "gate": "engineRunClean",
+      "verdict": "OK",
+      "measured": {
+        "symbols": [
+          "GOLDM"
+        ],
+        "trading_days_loaded": 2
+      },
+      "requirement": "quant_report.json parsed with at least one spread result and no error key"
+    }
+  ]
+}

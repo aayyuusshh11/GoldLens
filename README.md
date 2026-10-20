@@ -1,98 +1,121 @@
-# GoldLens — Team Handoff
+# GoldLens — MCX Gold Futures Intelligence Platform
 
-**Expiry-aware, cost-aware research for MCX gold futures calendar spreads.**
+GoldLens is a quantitative analytics and trading engine for MCX Gold calendar spreads (`GOLD` 1kg and `GOLDM` 100g futures).
 
-This handoff has been updated to incorporate Aayush S. Kushwaha's actual quant integration boundary (`api.py`) and sample serialized report (`api_contract_sample.json`). Those files are preserved under `reference/`. The quant API is a Python module boundary, not a ready-made HTTP API; the web backend still needs to expose routes around it.
+---
 
-## Team responsibilities
+## Developer Quickstart & Reproducibility Guide
 
-- **Aayush Thakre:** frontend, UX, API client, integration coordination and deployment.
-- **Aayush S. Kushwaha:** quant methodology, strategy, signal generation and backtesting.
-- **Araham Jain:** data ingestion, contract registry, backend routes and persistence.
+### 1. Where to Place Manually Downloaded MCX Files
+Place daily MCX Bhavcopy CSV files in:
+```
+data/raw/mcx/BhavCopyDateWise_<DDMMYYYY>.csv
+```
+*(Files placed directly in the repository root are also discovered for backward compatibility, but `data/raw/mcx/` is the standard location).*
 
-## Important finding from the supplied sample
+Official download source: [MCX Bhavcopy Portal](https://www.mcxindia.com/market-data/bhavcopy) (select Instrument `ALL`, click **Show**, and download the daily CSV).
 
-The sample report has **1 trading day**, **1 spread observation**, **no trades**, no configured costs, and `is_valid_backtest: false`. Its verdict explicitly says it is not a valid backtest. Treat it as a contract/shape example and diagnostic output, not proof of strategy performance. The sample's spec-check strings report passes for GOLD and GOLDM, but those strings alone do not replace reviewing the source specification and cross-check method.
+---
 
-## Stack proposal
+### 2. How to Run Ingestion & Pipeline
+The ingestion pipeline discovers all genuine files, filters `FUTCOM` contracts, drops options and unpriced marks, resolves key conflicts, and computes daily calendar spreads:
+```powershell
+py -3.13 quant/run_quant.py
+```
+This automatically updates `quant_report.json` with strategy results and diagnostic explanations.
 
-- Frontend: React + Vite + TypeScript, Tailwind CSS, shadcn/ui, Recharts, Lucide.
-- HTTP backend: Python + FastAPI + Pydantic.
-- Quant layer: use the supplied Python boundary and its DTOs; do not duplicate its calculations in the frontend.
-- Data: pandas; DuckDB or a documented existing storage choice.
-- Tests: pytest for backend/quant and frontend build/component tests.
+---
 
-## Repository layout
+### 3. How to Run Validation & Audit Reports
+To validate all ingested files, run schema checks, calculate deduplication metrics, and execute the readiness audit:
+```powershell
+py -3.13 -m quant.ingestion.generate_reports
+```
+This regenerates:
+- `data/reports/DATA_QUALITY_REPORT.md` (and `.json`)
+- `data/reports/BACKTEST_READINESS.md` (and `.json`)
+- Mirrors in `docs/`
 
-```text
-goldlens/
-├── README.md
-├── SKILLS.md
-├── .env.example
-├── docs/
-│   ├── IMPLEMENTATION_PLAN.md
-│   ├── API_CONTRACT.md
-│   ├── DATA_SCHEMA.md
-│   ├── METHODOLOGY.md
-│   └── DESIGN_SYSTEM.md
-├── frontend/
-├── backend/
-├── quant/                 # existing quant package; preserve module structure
-├── data/
-│   ├── raw/                # local/licensed data, do not commit by default
-│   └── fixtures/
-├── tests/
-├── prompts/
-└── reference/
-    ├── quant/api.py
-    └── samples/api_contract_sample.json
+---
+
+### 4. How to Run Tests
+Execute the complete test suite:
+```powershell
+py -3.13 -m pytest tests -q
+```
+Current test suite status (executed 2026-10-20, Pass 12): **103 passed, 0 failed**.
+
+---
+
+### 5. How to Interpret Readiness Status
+Read `data/reports/BACKTEST_READINESS.md`:
+- **`READY`**: All 5 gates passed. At least 30 spread sessions exist for the target pair, 100+ for walk-forward, verified costs are fully configured, and the engine executed cleanly.
+- **`NOT READY`**: At least one gate failed. For example:
+  - `minSpreadObservations`: Requires $\ge 30$ valid dated spread sessions for the target pair (currently 2 sessions).
+  - `walkForwardViability`: Requires $\ge 100$ spread sessions to run expanding-window folds.
+  - `costInputsVerified`: Requires brokerage and slippage to be verified against trader contract notes.
+
+*Important distinction (Pass 11 fix):* The audit strictly reports the time-series spread observations of the target trading pair (`GOLDM`: 2 sessions across 2026-10-16 and 2026-10-19). It never sums cross-sectional candidate counts across unrelated commodities.
+
+---
+
+### 6. What to Do When Data is Insufficient
+When the dataset has fewer than 30 spread sessions:
+1. The engine refuses to fabricate a backtest and operates in **`diagnostics_only`** mode.
+2. Signal generation outputs `NO TRADE` with rationale `insufficient history for roll z (need >= 15d, lookback 30d)`.
+3. Metrics are withheld (`gross_pnl: null`, `runnable: false`).
+4. **Action required:** Obtain additional daily bhavcopies from MCX (or an authorized EOD feed via `datafeed@mcxindia.com`), place them in `data/raw/mcx/`, and rerun `generate_reports.py`.
+
+---
+
+### 7. How to Configure Verified Transaction-Cost Inputs
+Transaction costs are configured via `CostInput` in `quant/config.py`:
+
+```python
+from quant.config import CostInput, StrategyConfig
+
+costs = CostInput(
+    # Statutory / Exchange verified charges:
+    exchange_transaction_bps_on_turnover=0.21,  # Rs 2.10 per lakh (0.0021%, MCX eff 1 Oct 2024)
+    stamp_duty_buy_side_bps_on_turnover=0.2,    # 0.002% BUY side only (Indian Stamp Rules 2019 eff 1 Jul 2020)
+    ctt_bps_on_sell_turnover=1.0,               # 0.01% SELL side only (Finance Act 2013 eff 1 Jul 2013)
+    gst_rate_on_transaction_charges=0.18,       # 18% GST on exchange transaction fees
+    tick_size_rupees_per_quote_unit=1.0,        # Rs 1 per 10g quote unit
+
+    # Trader-specific inputs (must come from broker contract note):
+    brokerage_rupees_per_lot=20.0,              # Supply verified rate from broker
+    slippage_ticks=1.0,                         # Supply measured fill slippage or stated policy
+)
+
+cfg = StrategyConfig(costs=costs)
 ```
 
-## Setup
+If `brokerage` or `slippage` is unverified, `costs` defaults to `None` and Net P&L is withheld to prevent misleading performance claims.
 
-Exact package commands depend on the repository that contains the existing quant package. Do not move `api.py` out of its Python package without adjusting its relative imports (`.config`, `.contracts`, `.data`, etc.).
+See `docs/COST_MODEL.md` for full statutory citations and formulas.
 
-Typical backend command once `backend/app/main.py` exists:
+---
 
-```bash
-cd backend
-python -m venv .venv
-# Windows: .venv\Scripts\Activate.ps1
-# macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+### 8. How to Configure the Shared Backend Adapter
+GoldLens integrates with FastAPI via `quant/service_adapter.py`.
+
+Set the environment variable in the backend environment:
+```powershell
+$env:GOLDLENS_QUANT_PACKAGE = "quant.service_adapter"
+$env:GOLDLENS_DATA_DIR = "d:/HACKthon/HillToHill/GOLD"  # optional, auto-discovered if not set
 ```
 
-Typical frontend command once scaffolded:
+The adapter exposes:
+- `get_quant_service()`
+- `analyze_signal(pair_id, as_of_date)`
+- `run_backtest(pair_id, start_date, end_date, strategy_version)`
 
-```bash
-cd frontend
-npm install
-npm run dev            # http://localhost:5173 — runs in fixture mode by default
-```
+See `docs/BACKEND_BLOCKER3_HANDOFF.md` for backend patch diffs and integration guidelines.
 
-The frontend is now implemented — see `frontend/README.md` for the full setup
-and `docs/FRONTEND_IMPLEMENTATION.md` for architecture and verification
-records. It runs today against the bundled diagnostic sample (fixture mode)
-and against the future backend in live mode (`VITE_DATA_MODE=live` +
-`VITE_API_BASE_URL`), with no silent fallback between the two.
+---
 
-## Non-negotiable data rules
-
-- Do not replace missing values with zero unless the calculation explicitly defines that behavior.
-- Preserve data provenance and source paths.
-- Do not imply a valid backtest when `is_valid_backtest` is false.
-- Respect `metrics.status`, `metrics.notes`, `metrics.costs_assumption`, `verdict` and `data_provenance`.
-- Never claim net performance when costs are not configured; the sample's `net_pnl_rupees` is null for this reason.
-- Do not invent current/live data or turn the sample JSON into fake live output.
-- Do not calculate spreads, z-scores or signals again in React. Render the quant API results.
-- Treat the API sample as a schema fixture only. Its date and values are example output, not a current market feed.
-
-## Definition of done
-
-- Clean setup and run commands are documented.
-- The frontend consumes the real HTTP API, whose routes call the quant boundary.
-- The main workflow displays source coverage, pair/spread, z-score, signal rationale, eligible contracts and backtest metrics.
-- One-day diagnostics are clearly labeled and never shown as a validated backtest.
-- Loading, empty, error, partial-data and diagnostics-only states are implemented.
-- All displayed metrics have units and a definition.
+### 9. Core Conventions
+- **Contract families:** `GOLD` (1 kg / 1000g, rvalue = 100) and `GOLDM` (100g, rvalue = 10).
+- **Quote basis:** ₹ per 10 grams.
+- **Spread convention:** `spread = far_close - near_close` (strictly far minus near).
+- **Execution mode:** `next_close` (causal rolling z-scores; decisions executed at next session close, eliminating look-ahead bias).

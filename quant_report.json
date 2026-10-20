@@ -1,0 +1,140 @@
+{
+  "data_files": [
+    "BhavCopyDateWise_16102026 (2).csv",
+    "BhavCopyDateWise_16102026.csv",
+    "BhavCopyDateWise_19102026.csv"
+  ],
+  "loading_note": "3 file(s) globbed, 2 distinct source(s) represented; duplicate (trade_date, symbol, expiry) keys resolved conflict-aware (priced records preferred over blank marks; see docs/DATA_QUALITY_REPORT.md)",
+  "trading_days_loaded": 2,
+  "date_range": [
+    "2026-10-16",
+    "2026-10-19"
+  ],
+  "spec_checks": [
+    "PASS GOLD: spec value/lot Rs 15,336,750 vs verified observed Rs 15,291,693 (rel err 0.3%) -> PASS",
+    "PASS GOLDM: spec value/lot Rs 1,495,985 vs verified observed Rs 1,526,663 (rel err 2.0%) -> PASS"
+  ],
+  "config": {
+    "lookback_days": 30,
+    "z_entry": 1.5,
+    "z_exit": 0.5,
+    "stop_z": 3.5,
+    "max_holding_days": 10,
+    "min_hist_days": 15,
+    "exec_mode": "next_close",
+    "allow_overlap": false,
+    "lots_per_leg": 1,
+    "walk_forward_folds": 3,
+    "costs": "not configured (gross-only reporting)"
+  },
+  "results": {
+    "GOLDM": {
+      "near_expiry": "2026-12-04",
+      "far_expiry": "2027-01-05",
+      "spread_observations": 2,
+      "first_date": "2026-10-16",
+      "last_date": "2026-10-19",
+      "spread_rejections": {
+        "invalid_price_rows_dropped": 0,
+        "stale_rows_flagged": 0
+      },
+      "filter_failures": 0,
+      "full_summary": {
+        "pair_symbol": "GOLDM",
+        "segment": "full",
+        "sessions": 2,
+        "trades": 0,
+        "n_days": 2,
+        "gross_pnl_rupees": 0.0,
+        "net_pnl_rupees": null,
+        "win_rate": null,
+        "max_drawdown_rupees": 0.0,
+        "net_max_drawdown_rupees": null,
+        "sharpe_ratio": null,
+        "net_sharpe_ratio": null,
+        "total_cost_rupees": null,
+        "n_trades": 0,
+        "avg_pnl_per_trade": null,
+        "notes": [
+          "Sharpe withheld: only 2 daily observations (< 20 required); estimates on such a short window are not statistically meaningful.",
+          "Net P&L withheld: costs not configured (config.costs is None).",
+          "Only 2 day(s) of history \u2014 these figures are diagnostics, NOT a valid backtest."
+        ],
+        "lookback_days": 30,
+        "z_entry": 1.5,
+        "z_exit": 0.5,
+        "stop_z": 3.5,
+        "max_holding_days": 10,
+        "exit_on_filter_breach": false,
+        "costs_configured": false,
+        "exec_mode": "next_close",
+        "lots_per_leg": 1,
+        "allow_overlap": false,
+        "metrics_basis": "gross_only_costs_missing",
+        "gross_daily_pnl_sum": 0.0,
+        "net_daily_pnl": null
+      },
+      "train_summary": {
+        "skipped": "insufficient_length=2"
+      },
+      "test_summary": {
+        "skipped": "insufficient_length=2"
+      },
+      "walk_forward": {
+        "folds": [],
+        "comparison": null,
+        "skipped_reason": "insufficient history for folds"
+      },
+      "insufficient_history": true,
+      "recent_explanations": [
+        {
+          "signal": "NO TRADE",
+          "z": null,
+          "spread": 1361.0,
+          "mean": null,
+          "std": null,
+          "filters_ok": true,
+          "filter_reason": "",
+          "position_before": "flat",
+          "rationale": "insufficient history for roll z (need >= 15d, lookback 30d)"
+        },
+        {
+          "signal": "NO TRADE",
+          "z": null,
+          "spread": 1359.0,
+          "mean": null,
+          "std": null,
+          "filters_ok": true,
+          "filter_reason": "",
+          "position_before": "flat",
+          "rationale": "insufficient history for roll z (need >= 15d, lookback 30d)"
+        }
+      ],
+      "verdict": "NOT A VALID BACKTEST: too few observations. Signal layer outputs NO TRADE with 'insufficient history' rationale for all days."
+    }
+  },
+  "signal_explanations_sample": [
+    {
+      "signal": "NO TRADE",
+      "z": null,
+      "spread": 1361.0,
+      "mean": null,
+      "std": null,
+      "filters_ok": true,
+      "filter_reason": "",
+      "position_before": "flat",
+      "rationale": "insufficient history for roll z (need >= 15d, lookback 30d)"
+    },
+    {
+      "signal": "NO TRADE",
+      "z": null,
+      "spread": 1359.0,
+      "mean": null,
+      "std": null,
+      "filters_ok": true,
+      "filter_reason": "",
+      "position_before": "flat",
+      "rationale": "insufficient history for roll z (need >= 15d, lookback 30d)"
+    }
+  ]
+}

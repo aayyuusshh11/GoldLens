@@ -1,0 +1,46 @@
+{
+  "manifest_version": "1.0",
+  "updated_at": "2026-10-20T13:07:00Z",
+  "total_files": 3,
+  "files": [
+    {
+      "filename": "BhavCopyDateWise_16102026 (2).csv",
+      "path": "BhavCopyDateWise_16102026 (2).csv",
+      "size_bytes": 1918268,
+      "sha256": "97fb1028bca988d13ecf47895253feb9537c6700f6cd09ce4927d9b623f9a53e",
+      "trade_dates_in_content": [
+        "16 Oct 2026"
+      ],
+      "total_rows": 15535,
+      "futcom_rows": 168,
+      "goldm_rows": 6,
+      "status": "verified_imported"
+    },
+    {
+      "filename": "BhavCopyDateWise_16102026.csv",
+      "path": "BhavCopyDateWise_16102026.csv",
+      "size_bytes": 1918268,
+      "sha256": "74a1e5a66faad9e8aa6d71210be9cc653a2e9672a733ba1c1107539171d5ef66",
+      "trade_dates_in_content": [
+        "16 Oct 2026"
+      ],
+      "total_rows": 15535,
+      "futcom_rows": 168,
+      "goldm_rows": 6,
+      "status": "verified_imported"
+    },
+    {
+      "filename": "BhavCopyDateWise_19102026.csv",
+      "path": "data\\raw\\mcx\\BhavCopyDateWise_19102026.csv",
+      "size_bytes": 1924973,
+      "sha256": "f5ae9c5a32c163c3116f3db0d442a06c8aedb43476f1249126840509e138263c",
+      "trade_dates_in_content": [
+        "19 Oct 2026"
+      ],
+      "total_rows": 15601,
+      "futcom_rows": 168,
+      "goldm_rows": 6,
+      "status": "verified_imported"
+    }
+  ]
+}
