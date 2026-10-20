@@ -6,8 +6,6 @@ from fastapi import APIRouter, HTTPException
 from app.api import deps
 from app.services.analytics import SignalAnalyzeResult, analyze_signal
 from app.schemas.api_models import (
-    BacktestRunRequest,
-    BacktestRunResponse,
     SignalAnalyzeRequest,
     SignalAnalyzeResponse,
 )

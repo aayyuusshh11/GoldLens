@@ -196,13 +196,6 @@ class GoldlensDB:
                 f"b.{c} IS NOT DISTINCT FROM o.{c}" for c in _BUSINESS_KEY_COLUMNS
             )
             key_cols = ", ".join(_BUSINESS_KEY_COLUMNS)
-            column_names = (
-                "trade_date, instrument_type, symbol, expiry_date, option_type, "
-                "strike_price, contract_id, symbol_raw, open, high, low, close, "
-                "previous_close, settlement_price, volume_lots, volume_quantity, "
-                "volume_unit, value_lacs, open_interest_lots, has_ohlc, zero_volume, "
-                "is_tradable_candidate, source_file, source_row, ingested_at, validation_flags"
-            )
             # 1) keep only the FIRST occurrence per business key within the batch
             #    (deterministic: lowest source_row); 2) skip keys already stored.
             self.con.execute(f"""
@@ -351,7 +344,7 @@ class GoldlensDB:
             "invalid_range_rows", "stale_price_rows", "unsupported_rows",
             "no_unit_rows",
         ]
-        row = self.con.execute(f"""
+        row = self.con.execute("""
             SELECT
                 count(*) as total_rows,
                 count(DISTINCT trade_date) as distinct_dates,

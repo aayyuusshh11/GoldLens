@@ -186,7 +186,7 @@ def test_openapi_loads_and_documents_routes(client_goldm: TestClient):
         "/api/health",
         "/api/contracts",
         "/api/pairs",
-        f"/api/pairs/{{pair_id}}/history",
+        "/api/pairs/{pair_id}/history",
         "/api/signals/analyze",
         "/api/backtests/run",
         "/api/data-quality",

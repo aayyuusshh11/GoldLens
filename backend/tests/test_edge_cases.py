@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from app.services.analytics import analyze_signal, list_pairs, pair_history, run_backtest
 from app.services.ingest import ingest_csv
 from app.storage.database import GoldlensDB
@@ -67,15 +65,17 @@ def test_two_files_same_day_no_cross_file_duplicates(tmp_path: Path):
     src2 = write_csv(tmp_path, [make_row()], name="b.csv")
     db_path = tmp_path / "processed" / "dupe.duckdb"
     with GoldlensDB(db_path) as db:
-        for src in (src1, src2):
-            observations, _rej, report = ingest_csv(src)
-            stats = db.store_ingest(observations, report)
-    stats2 = stats
+        observations, _rej, report = ingest_csv(src1)
+        stats1 = db.store_ingest(observations, report)
+        observations, _rej, report = ingest_csv(src2)
+        stats2 = db.store_ingest(observations, report)
+    assert stats1.observations_inserted == 1        # first file inserts
+    assert stats1.observations_skipped == 0
     assert stats2.observations_inserted == 0        # second file adds nothing
-    stats1 = None
+    assert stats2.observations_skipped == 1
     with GoldlensDB(db_path) as db:
         assert db.observation_count() == 1
-        # provenance of first accepted inset retained
+        # provenance of first accepted insert retained
         row = db.observations_by_symbol("GOLD")[0]
         assert row["source_file"] == "a.csv"
 

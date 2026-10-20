@@ -30,7 +30,6 @@ from app.storage.database import GoldlensDB
 def build_data_quality(db: GoldlensDB) -> DataQualityReport:
     counts = db.quality_counts()
     verification = db.verification_counts()
-    contract_total = db.contract_total()
     dates = db.distinct_trade_dates()
     sources_raw = db.ingest_run_history()
     duplicates = db.duplicate_business_key_rows()
@@ -51,7 +50,6 @@ def build_data_quality(db: GoldlensDB) -> DataQualityReport:
             "no observations stored — ingest the supplied CSV first (POST /api/ingest or CLI `python -m app.cli ingest`)",
         )
     else:
-        min_date, max_date = counts["min_date"], counts["max_date"]
         add("ZERO_VOLUME_ROWS", "warning", counts["zero_volume_rows"],
             "rows report Volume(Lots)=0; populated closes on these rows are reference values, not tradable quotes")
         add("MISSING_VOLUME_ROWS", "warning", counts["missing_volume_rows"],
