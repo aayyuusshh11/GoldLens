@@ -1,5 +1,10 @@
 # GoldLens Daily Handoff
 
+> Quick daily form. The canonical, always-current project record is
+> **docs/HANDOFF.md** (phase-by-phase status, verification matrix, change log,
+> blockers). Update it — not this file — at the end of every phase, and copy
+> today's snapshot into the fields below if you need a daily summary.
+
 - Owner:
 - Branch / PR:
 - Completed:
