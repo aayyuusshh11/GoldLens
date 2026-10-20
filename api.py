@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false
 """GOLDLENS quant module typed integration API.
 
 Boundary layer for the Quant/Strategy/Backtesting module. Existing app/backend

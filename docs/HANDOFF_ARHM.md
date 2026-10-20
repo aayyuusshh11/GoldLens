@@ -103,7 +103,12 @@ The backend deliberately does not implement quant logic. Integration options:
    - `analyze_signal(pair_id, as_of_date) -> dict` (fields per `SignalAnalyzeResponse`)
    - `run_backtest(pair_id, start_date, end_date, strategy_version) -> dict` (per `BacktestRunResponse`)
    The boundary reference `api.py` in the repo root maps closely to this; its DTOs
-   (`SignalDTO`, `MetricsDTO`, `BacktestReportDTO`) can be adapted.
+   (`SignalDTO`, `MetricsDTO`, `BacktestReportDTO`) can be adapted. `api.py` is a
+   *reference copy here*: its relative imports (`.config`, `.contracts`, `.engine`,
+   `.metrics`, `.selection`, `.spreads`, `.zscore`, `.run_quant`) resolve only inside
+   the quant team's own package, not in this repo. Line 1 carries
+   `# pyright: reportMissingImports=false` so IDEs do not flag these 8 expected
+   unresolved imports; the file runs unchanged on the quant side.
 2. **HTTP service**: wrap the same interface in a tiny FastAPI/HTTP adapter and call it from
    `analyze_signal`/`run_backtest` in `backend/app/services/analytics.py`.
 
