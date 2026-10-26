@@ -16,7 +16,16 @@ htmlcov/
 *.log
 
 # --- Raw market data sources (user-managed; see also data/.gitignore) ---
+# Daily MCX bhavcopy CSVs and spec reports stay on local disk only.
 BhavCopyDateWise_*.csv
+*.xls
+*.xlsx
+*.xlsm
+workflow.txt
+quant_report.local.json
+
+# --- Local notes / scratch ---
+HANDOFF_ARHM_local.md
 
 # --- OS noise ---
 Thumbs.db

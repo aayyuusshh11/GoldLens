@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -77,9 +78,24 @@ def _source_paths() -> list[Path]:
 
 
 def load_frame() -> pd.DataFrame:
-    """Repo bhavcopy files through the existing validated loader."""
-    ds = load_dataset(_source_paths())
-    return ds.frame
+    """Repo bhavcopy files through the existing validated loader.
+
+    Cached after first load: the backend calls the service on every request
+    and re-reading + re-validating the source CSVs each time is pure latency.
+    The double-checked lock keeps two simultaneous cold requests from both
+    re-running the ingest-side validation. A restart (or new ingest drop)
+    picks up newly added files.
+    """
+    global _FRAME_CACHE
+    if _FRAME_CACHE is None:
+        with _FRAME_LOCK:
+            if _FRAME_CACHE is None:
+                _FRAME_CACHE = load_dataset(_source_paths()).frame
+    return _FRAME_CACHE
+
+
+_FRAME_CACHE: pd.DataFrame | None = None
+_FRAME_LOCK = threading.Lock()
 
 
 class GoldlensQuantService:

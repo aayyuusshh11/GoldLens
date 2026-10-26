@@ -18,6 +18,7 @@ Design (Phase 3, IMPLEMENTATION_PHASES_ARHM.txt):
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -150,18 +151,40 @@ class GoldlensDB:
 
     def __init__(self, path: Path | str = DB_PATH):
         self.path = Path(path)
+        self._local = threading.local()
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.con = duckdb.connect(str(self.path))
         except Exception as err:  # pragma: no cover - environment specific
             raise StorageError(f"cannot open DuckDB database at {self.path}: {err}") from err
         self.con.execute(OBSERVATIONS_DDL)
         self.con.execute(CONTRACTS_DDL)
         self.con.execute(INGEST_RUNS_DDL)
 
+    @property
+    def con(self):
+        """One DuckDB connection **per thread** (never shared).
+
+        uvicorn serves sync endpoints from a thread pool; a single shared
+        connection raises DuckDB's ResourceInUseException as soon as two
+        requests interleave ("connection is busy with another call"). Each
+        thread opens its own connection to the same file instead, which is
+        safe for concurrent reads (the API never writes).
+        """
+        con = getattr(self._local, "con", None)
+        if con is None:
+            try:
+                con = duckdb.connect(str(self.path))
+            except Exception as err:  # pragma: no cover - environment specific
+                raise StorageError(f"cannot open DuckDB database at {self.path}: {err}") from err
+            self._local.con = con
+        return con
+
     def close(self) -> None:
         try:
-            self.con.close()
+            con = getattr(self._local, "con", None)
+            if con is not None:
+                con.close()
+                self._local.con = None
         except Exception:  # pragma: no cover
             pass
 

@@ -13,6 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from app.config import MIN_TRADE_DATES_FOR_SIGNAL
 from app.schemas.api_models import (
     BacktestRunResponse,
     DataQualityBlock,
@@ -48,28 +49,43 @@ def _warning(code: str, severity: str, count: int, message: str) -> dict[str, An
 
 
 def list_pairs(db: GoldlensDB, symbol: str | None = None) -> PairsResponse:
-    """Candidate near/far pairs from observed contracts (structural only)."""
-    warnings = [
-        _warning(
-            "UNVERIFIED_SPEC",
-            "warning",
-            db.verification_counts().get("unverified", 0),
-            "no contract specification is verified in this registry; eligibility requires quant+spec verification",
-        )
-    ]
+    """Candidate near/far pairs from observed contracts (structural only).
+
+    Status/reason codes reflect the actual registry: `eligible` requires BOTH
+    legs verified and at least MIN_TRADE_DATES_FOR_SIGNAL distinct dates;
+    anything else stays a candidate with explicit reason codes.
+    """
+    pairs: list[PairSummary] = []
     if db.observation_count() == 0:
-        warnings.insert(0, _warning("NO_DATA", "critical", 0, "no observations stored; ingest the CSV first"))
+        warnings = [_warning("NO_DATA", "critical", 0, "no observations stored; ingest the CSV first")]
         return PairsResponse(pairs=[], warnings=warnings)
 
-    pairs: list[PairSummary] = []
+    unverified_total = db.verification_counts().get("unverified", 0)
+    warnings: list[dict[str, Any]] = []
+    if unverified_total:
+        warnings.append(
+            _warning(
+                "UNVERIFIED_SPEC",
+                "warning",
+                unverified_total,
+                f"{unverified_total} contract specification(s) still unverified in this registry; "
+                "eligibility requires quant+spec verification",
+            )
+        )
+
     symbols = {symbol} if symbol is not None else {
         c["symbol"] for c in db.list_contracts(limit=10000) if c["instrument_type"] == "FUTCOM"
     }
+    distinct_dates = db.quality_counts()["distinct_dates"]
     for sym in sorted(symbols):
         rows = [r for r in db.observations_by_symbol(sym) if r["instrument_type"] == "FUTCOM"]
         expiries = sorted({r["expiry_date"] for r in rows if r["expiry_date"]})
         if len(expiries) < 2:
             continue
+        status_by_id = {
+            c["contract_id"]: c["verification_status"]
+            for c in db.list_contracts(symbol=sym, limit=10000)
+        }
         for near, far in zip(expiries, expiries[1:]):  # adjacent expiry candidates
             gap = (datetime.strptime(far, "%Y-%m-%d") - datetime.strptime(near, "%Y-%m-%d")).days
             if gap > MAX_PAIR_LAG_DAYS:
@@ -77,14 +93,25 @@ def list_pairs(db: GoldlensDB, symbol: str | None = None) -> PairsResponse:
             all_dates = {r["trade_date"] for r in rows}
             near_id = f"FUTCOM_{sym}_{near.replace('-', '')}"
             far_id = f"FUTCOM_{sym}_{far.replace('-', '')}"
+
+            reason_codes: list[str] = []
+            if (
+                status_by_id.get(near_id, "unverified") != "verified"
+                or status_by_id.get(far_id, "unverified") != "verified"
+            ):
+                reason_codes.append("UNVERIFIED_SPEC")
+            if distinct_dates < MIN_TRADE_DATES_FOR_SIGNAL:
+                reason_codes.append("INSUFFICIENT_HISTORY")
+            status = "eligible" if not reason_codes else "candidate_only"
+
             pairs.append(
                 PairSummary(
                     pair_id=make_pair_id(sym, near, far),
                     symbol=sym,
                     near=LegSummary(contract_id=near_id, expiry_date=near),
                     far=LegSummary(contract_id=far_id, expiry_date=far),
-                    status="candidate_only",
-                    reason_codes=["UNVERIFIED_SPEC"],
+                    status=status,
+                    reason_codes=sorted(set(reason_codes)),
                     history_days=len(all_dates),
                 )
             )
@@ -144,8 +171,12 @@ def pair_history(
         tradable = all(
             r["has_ohlc"] and not r["zero_volume"] for r in (near_row, far_row)
         )
+        # Settled spread convention (docs/API_CONTRACT §4 + quant engine):
+        # spread = far_close − near_close, Rs per 10 g quote basis.
+        # (Earlier reference implementation computed near − far — flagged and
+        # now aligned so the unwired fallback matches the wired quant result.)
         spread = (
-            float(near_row["close"]) - float(far_row["close"])
+            float(far_row["close"]) - float(near_row["close"])
             if near_row["close"] is not None and far_row["close"] is not None
             else None
         )
@@ -171,10 +202,21 @@ def pair_history(
                 f"{distinct_dates} distinct trading date(s) stored: this is reference data, not a history series",
             )
         )
-    warn0 = [
-        _warning("UNVERIFIED_SPEC", "warning", db.verification_counts().get("unverified", 0),
-                 "contract specifications unverified; treat spreads as reference only")
-    ]
+    warn0: list[dict[str, Any]] = []
+    leg_status = {
+        c["contract_id"]: c["verification_status"]
+        for c in db.list_contracts(symbol=symbol, limit=10000)
+    }
+    near_id = f"FUTCOM_{symbol}_{near.replace('-', '')}"
+    far_id = f"FUTCOM_{symbol}_{far.replace('-', '')}"
+    if (
+        leg_status.get(near_id, "unverified") != "verified"
+        or leg_status.get(far_id, "unverified") != "verified"
+    ):
+        warn0.append(
+            _warning("UNVERIFIED_SPEC", "warning", db.verification_counts().get("unverified", 0),
+                     "contract specifications unverified; treat spreads as reference only")
+        )
     warnings.extend(warn0)
 
     return PairHistoryResponse(
@@ -230,8 +272,18 @@ def analyze_signal(db: GoldlensDB, pair_id: str, as_of_date: str | None) -> Sign
     else:
         reason_codes.append("PAIR_UNKNOWN_FORMAT")
 
-    if db.verification_counts().get("unverified", 0) == db.contract_total() and db.contract_total():
-        reason_codes.append("UNVERIFIED_SPEC")
+    if parsed is not None:
+        leg_status = {
+            c["contract_id"]: c["verification_status"]
+            for c in db.list_contracts(symbol=parsed[0], limit=10000)
+        }
+        near_id = f"FUTCOM_{parsed[0]}_{parsed[1].replace('-', '')}"
+        far_id = f"FUTCOM_{parsed[0]}_{parsed[2].replace('-', '')}"
+        if (
+            leg_status.get(near_id, "unverified") != "verified"
+            or leg_status.get(far_id, "unverified") != "verified"
+        ):
+            reason_codes.append("UNVERIFIED_SPEC")
 
     data_quality = DataQualityBlock(
         distinct_trade_dates=distinct_dates,

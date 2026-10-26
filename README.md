@@ -1,132 +1,118 @@
-# GoldLens — Data Engineering & Backend Starter
+# GoldLens — MCX Gold Futures Calendar-Spread Research Platform
 
-**Project:** GoldLens — MCX Gold Futures Relative-Value Intelligence  
-**Owner of this workstream:** Araham (Arhm) Jain  
-**Role:** Data Engineer, Contract Registry, FastAPI, and Storage  
-**Status:** Planning and data audit only; backend implementation has not yet been performed by this document.
+**Expiry-aware, cost-aware, dishonesty-resistant research for MCX gold futures calendar spreads (`GOLD` 1 kg, `GOLDM` 100 g).**
 
-## 1. Purpose
+GoldLens ingests MCX BhavCopy CSVs, builds a provenance-aware contract registry and spread history, and produces spreads / signals / cost-aware backtests through a quant-owned engine — surfaced in a research-grade UI that renders honest *refusals* (NO TRADE, diagnostics-only, runnable:false) exactly like results. With a single day of BhavCopy data, GoldLens deliberately **refuses** to draw z-scores, run backtests or claim performance; supply ≥ 30 distinct trade dates and the gates open automatically.
 
-GoldLens helps researchers inspect comparable MCX gold futures contracts, calculate relative-value signals, and evaluate them with cost-aware chronological backtests. It must be equally willing to return **NO TRADE** when data is insufficient, specifications are unverified, contracts are illiquid, costs erase the apparent edge, or a valid backtest cannot be run.
+> **Research integrity rule of this repo:** any number that cannot be traced to a verified source (exchange circular, statute, broker contract note) stays unverified, and every dependent figure (net P&L, z-score metrics) is withheld instead of guessed. An illustrative calculation is never presented as a trading signal.
 
-This repository must not present an illustrative calculation as a real trading signal or synthetic history as exchange data.
+---
 
-## 2. Team ownership
-
-- **Aayush Thakre — Team lead / frontend / full-stack integration:** React, Vite, TypeScript, Tailwind CSS, shadcn/ui, Recharts, integration and deployment.
-- **Aayush S. Kushwaha — Quantitative analyst:** contract comparability and normalization methodology, spread/z-score definitions, signal rules, transaction-cost assumptions, and backtesting logic.
-- **Araham Jain — Data engineer / backend:** data ingestion and validation, contract registry, storage, FastAPI/Pydantic endpoints, data-quality reporting, backend tests, and handoff documentation.
-
-## 3. Current data audit
-
-The supplied file was inspected: `BhavCopyDateWise_16102026 (2).csv`.
-
-Observed file facts:
-- 15,535 rows and 15 columns.
-- One trading date only: `16 Oct 2026`.
-- 31 distinct raw symbol strings; symbol values include trailing whitespace.
-- Instrument types include `OPTFUT`, `OPTIDX`, `FUTCOM`, and `FUTIDX`.
-- 168 rows have `Instrument Name == FUTCOM`.
-- No exact duplicate full rows were found in the supplied file.
-- `Open`, `High`, and `Low` are missing on 14,592 rows overall. Many option rows have zero volume and a non-null close; these must not be mistaken for executable prices.
-- The file includes futures rows for `GOLD`, `GOLDM`, `GOLDTEN`, `GOLDGUINEA`, and `GOLDPETAL`, but a single snapshot cannot support rolling z-scores, chronological walk-forward backtesting, or claims about historical performance.
-- Gold futures examples on the file date include GOLD Dec-2026 and Feb-2027 expiries, and GOLDM Nov-2026 through Apr-2027 expiries. These are observed rows, **not verified proof that the contracts are comparable**.
-- The volume unit field contains strings such as `5091.000 GRMS`; preserve the raw value and parse quantity/unit separately. Do not assume volume, quotation units, or contract sizes from symbol names.
-- `Close` and `Previous Close` are populated even on many zero-volume rows. A populated value alone is not evidence of a tradable observation.
-
-These are descriptive findings from the uploaded file, not verification of MCX contract specifications. Verify current and historical specifications from an authoritative source before marking a contract as eligible.
-
-## 4. MVP scope
-
-Implement one reproducible pipeline:
-
-1. Load a user-provided CSV without changing the original file.
-2. Validate required columns, parse dates, normalize symbol whitespace, and preserve raw source fields.
-3. Distinguish futures from options and reject unsupported instruments from the gold-futures analytics path.
-4. Report missing OHLC values, zero volume/open interest, duplicate business keys, invalid ranges, unparsed units, and unsupported symbols.
-5. Store normalized observations and a provenance-aware contract registry in DuckDB (preferred for the prototype) or a similarly lightweight local store.
-6. Expose documented FastAPI endpoints.
-7. Return a clear data-insufficiency status when historical observations are not sufficient for signal analysis/backtesting.
-8. Provide tests and exact run instructions.
-
-## 5. Suggested repository layout
+## Repository layout (integrated)
 
 ```text
 GoldLens/
-├── README.md
-├── docs/
-│   ├── DATA_SCHEMA.md
-│   ├── API_CONTRACT.md
-│   ├── DATA_AUDIT.md
-│   └── HANDOFF_ARHM.md
-├── data/
-│   ├── raw/                 # user-managed source files; do not commit large/private files
-│   └── processed/           # generated local artifacts; normally gitignored
-├── backend/
-│   ├── app/
-│   │   ├── main.py
-│   │   ├── config.py
-│   │   ├── schemas/
-│   │   ├── services/
-│   │   ├── storage/
-│   │   └── api/
-│   ├── tests/
-│   └── requirements.txt
-├── frontend/
-└── .gitignore
+├── frontend/                 # React + Vite + TS research UI (fixture & live modes)
+├── backend/                  # FastAPI + DuckDB pipeline (ingest → registry → routes)
+├── quant/                    # Quant engine: spreads, z-score, signals, CTT cost model, backtests
+│   └── ingestion/            # file discovery, validation, coverage & readiness audits
+├── tests/                    # quant test suite (101+ tests)
+├── data/                     # raw CSVs + processed DuckDB (git-ignored, user-managed)
+├── docs/                     # API contract, data schema, methodology, cost model, handoffs
+└── .github/workflows/ci.yml  # frontend + backend + quant test suites
 ```
 
-Inspect the real repository before creating or modifying this structure. Do not overwrite teammates' files.
+## Team
 
-## 6. Shared data contract
+| Member | Workstream | Branch |
+|---|---|---|
+| **Aayush Thakre** | Frontend, UX, API client, integration | `main` |
+| **Aayush S. Kushwaha** | Quant engine, CTT cost model, backtesting | `Quant` |
+| **Araham Jain** | Data ingestion, DuckDB registry, FastAPI backend | `backend` |
 
-The canonical observation model should map applicable source fields to:
+All three workstreams are merged on the `final` branch; this file documents the integrated state.
 
-- `trade_date` (date)
-- `contract_id` (stable internal identifier)
-- `symbol` (trimmed canonical symbol; retain original source symbol separately)
-- `expiry_date` (date)
-- `open`, `high`, `low`, `close`, `settlement_price` (nullable numeric values; settlement may be unavailable in this file)
-- `volume_lots` (nullable numeric)
-- `volume_quantity` and `volume_unit` (nullable; parse from source only when reliable)
-- `value_lacs` (nullable numeric; preserve source unit)
-- `open_interest_lots` (nullable numeric)
-- `source_file`, `source_row`, `ingested_at`, and validation metadata.
+## Quickstart
 
-Do not fill missing values with zero. Zero reported volume is a meaningful observed value; missing volume is a different state.
+### 0) Prerequisites
+- Node 22+, npm
+- Python 3.13+, pip
+- A MCX BhavCopy CSV dropped at the repo root (`BhavCopyDateWise_<DDMMYYYY>.csv`) — [download from MCX](https://www.mcxindia.com/market-data/bhavcopy). Do **not** commit it (git-ignored).
 
-Contract registry records should include `contract_id`, canonical symbol, instrument type, contract size, quantity unit, quotation unit, purity where applicable, tick size, expiry date/rule, effective-from/effective-to dates, verification status, source/provenance, and verification timestamp. Unknown values must remain unknown.
+### 1) Backend — ingest + serve
+```powershell
+cd backend
+python -m venv .venv                      # once
+.venv\Scripts\activate                    # PowerShell
+pip install -r requirements.txt
 
-## 7. API endpoints to coordinate with the team
+python -m app.cli ingest --store          # CSV → validated DuckDB registry (idempotent)
+python -m uvicorn app.main:app --port 8000
+```
+OpenAPI: `http://127.0.0.1:8000/docs`. Tests: `python -m pytest tests -q`.
 
-- `GET /api/health`
-- `GET /api/contracts`
-- `GET /api/pairs`
-- `GET /api/pairs/{pair_id}/history`
-- `POST /api/signals/analyze`
-- `POST /api/backtests/run`
-- `GET /api/data-quality`
+### 2) Frontend — UI
+```powershell
+cd frontend
+npm install
+npm run dev            # http://localhost:5173
+```
+- **Fixture mode (default):** runs on the bundled 1-trading-day mirror of the real backend — always labeled in the UI.
+- **Live mode:** with the backend running on :8000, run another dev session with
+  ```powershell
+  $env:VITE_DATA_MODE="live"
+  npm run dev
+  ```
+  `VITE_API_BASE_URL` unset ⇒ same-origin via the Vite dev proxy (`/api` → `127.0.0.1:8000`). The app never silently falls back from live to fixture; failures render as explicit error states.
+- Tests: `npm test` · Production build: `npm run build`.
 
-Agree exact request/response types with Aayush and Aayush S. Kushwaha in `docs/API_CONTRACT.md` before integration. Signal and backtest endpoints must return explicit warnings or a structured refusal when there is not enough verified history.
+### 3) Quant — pipeline (optional standalone)
+```powershell
+pip install pandas pyarrow pytest
+python -m pytest tests -q                 # 101+ engine/cost/integration tests
+py -3.13 quant/run_quant.py               # bhavcopy → quant_report.json (diagnostics)
+python -m quant.ingestion.generate_reports  # data-quality + backtest-readiness reports
+```
 
-## 8. Safety and research integrity
+### 4) Wire quant into the backend (live analytics)
+```powershell
+# from backend/, with the repo root one level up:
+set PYTHONPATH=..
+set GOLDLENS_QUANT_PACKAGE=quant.service_adapter
+python -m uvicorn app.main:app --port 8000
+```
+`quant.service_adapter` implements the exact service contract the backend loads via env (`get_quant_service()` → `analyze_signal` / `run_backtest`). Until it is wired — or when history is insufficient — endpoints return the documented structured refusals rather than fabricated analytics.
 
-- Never infer contract size, purity, quote units, or eligibility from a symbol alone.
-- Never describe one date of data as historical backtest data.
-- Never introduce future observations into a signal or backtest decision.
-- Do not treat option contracts as gold futures.
-- Do not treat zero-volume rows as liquid tradable observations.
-- Do not silently repair or discard rows without reporting counts and reasons.
-- Keep raw source data immutable and attach provenance to processed records.
-- Make `NO TRADE` a first-class, explainable result.
+## The settled API (7 routes)
 
-## 9. Definition of done for Arhm's workstream
+| Route | Purpose |
+|---|---|
+| `GET /api/health` | service + data availability (`distinct_trade_dates`, `latest_data_date`) |
+| `GET /api/contracts?symbol=&limit=&offset=` | provenance-aware contract registry (spec fields stay `null` until verified) |
+| `GET /api/pairs?symbol=` | near/far calendar-spread candidates (`candidate_only` until verified+eligible) |
+| `GET /api/pairs/{pair_id}/history` | spread observations (`observation` vs `reference_only`; spread = **far − near**) |
+| `POST /api/signals/analyze` | decision per pair/date (`NO_TRADE` until quant service wired) |
+| `POST /api/backtests/run` | cost-aware backtest (refused with `runnable:false` if history insufficient) |
+| `GET /api/data-quality` | sources, row accounting, issues, spec verification, history sufficiency |
 
-- CSV ingestion is repeatable and validates the supplied file.
-- Data-quality summary is available via API and documented.
-- Contract registry records verified vs unknown fields and their sources.
-- Local storage can be rebuilt from the original input.
-- FastAPI endpoints and Pydantic schemas are documented and tested.
-- Tests cover malformed files, missing fields, invalid dates, duplicate keys, zero volume, missing OHLC, and unsupported instrument types.
-- Insufficient history is explicitly reported for rolling analytics and backtests.
-- Handoff notes tell the other two developers exactly how to run the backend and what API fields are stable.
+Errors are shaped `{"error": {"code", "message", "details"}}` (`invalid_input | not_found | data_unavailable | internal_error`). `POST /api/ingest` exists as backend tooling and is deliberately not exposed to the frontend.
+
+## Data status (measured, not assumed)
+
+- Source today: one trading day (`2026-10-16`) — signals, rolling z-scores and backtests are **refused by design** until ≥ 30 distinct dates are ingested.
+- Contract specs: all registry entries carry `unverified` status with `null` spec fields until the quant owner supplies authoritative source references.
+- Costs: statutory components (CTT, stamp duty, exchange transaction fee + GST, tick size) are **verified with citations** in `docs/COST_MODEL.md`; brokerage and slippage remain unverified, so net P&L is withheld, not estimated.
+
+## Docs index
+
+- `docs/API_CONTRACT.md` — settled routes, shapes, status mapping
+- `docs/DATA_SCHEMA.md` — observations, contracts, provenance, registry
+- `docs/INTEGRATION_BLOCKERS.md` — integration ledger incl. resolutions on `final`
+- `docs/METHODOLOGY.md`, `docs/SPREAD_ENGINE.md` — spread/z-score/signal rules
+- `docs/COST_MODEL.md` — per-event cost formula with statutory citations
+- `docs/HANDOFF.md`, `docs/HANDOFF_ARHM.md`, `docs/BACKEND_BLOCKER3_HANDOFF.md` — per-workstream handoffs
+- `docs/DATA_AUDIT.md`, `docs/DATA_ACQUISITION_CHECKLIST.md`, `docs/HISTORICAL_DATA_INGESTION.md` — data ops
+
+## License
+
+MIT — see [LICENSE](LICENSE).

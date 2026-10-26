@@ -67,7 +67,7 @@ Then: set `VITE_DATA_MODE=live` + `VITE_API_BASE_URL` → run.
 
 ---
 
-## 4. Added 2026-10-19 � route-set discrepancy needs a decision (team lead)
+## 4. Added 2026-10-19 � route-set discrepancy needs a decision (team lead)
 
 Two contract drafts now coexist in this repo:
 
@@ -84,11 +84,11 @@ routes entirely, and live mode degrades route failures into explicit error
 states.
 
 Also recorded: `reference/quant/api.py` is byte-identical to the root
-`api.py` handoff file (same SHA-256) � it is a copy, not the missing internal
-package (`config/contracts/data/engine/�`). Until those modules or a runnable
+`api.py` handoff file (same SHA-256) � it is a copy, not the missing internal
+package (`config/contracts/data/engine/�`). Until those modules or a runnable
 backend appear, end-to-end live verification remains blocked (B1/B2 lineage).
 
-## 5. Frontend gap pass � 2026-10-19 (team lead, verified)
+## 5. Frontend gap pass � 2026-10-19 (team lead, verified)
 
 Implemented against adopted base: shared `ConfigChips` reused by Backtest + Signal
 Forensics (full run-config on both); Pair Explorer spread-semantics notice
@@ -98,3 +98,33 @@ notice shown whenever folds exist (previously keyed on brittle name checks);
 reason-token legend derived only from tokens present in data; frontend README +
 .env.example rewritten for the adopted stack. Verified: typecheck clean,
 69/69 tests, production build, eslint 0 errors / 6 minor fast-refresh warnings.
+
+---
+
+## 6. Resolution — 2026-10-20, integrated on `final`
+
+1. **Route set: settled.** The backend's implemented task-sliced routes won
+   (docs/API_CONTRACT.md backend-branch version, §1–§8). The frontend data
+   layer was migrated P9-style: `lib/api/endpoints.ts` targets exactly
+   `GET /api/health`, `GET /api/contracts`, `GET /api/pairs`,
+   `GET /api/pairs/{pair_id}/history`, `POST /api/signals/analyze`,
+   `POST /api/backtests/run`, `GET /api/data-quality`. The old single
+   mega-report client (`GET /api/v1/report`) and its quant-boundary DTOs are
+   deleted from the app.
+2. **Error shape: settled** to the backend's `{error:{code,message,details}}`;
+   the frontend client additionally degrades legacy FastAPI `{detail: ...}`
+   bodies safely instead of failing.
+3. **Spread convention: settled** — the settled API's spread column is
+   `far_close − near_close` (backend code and quant engine agree); UI copy
+   renders the convention verbatim. The old quant-boundary sample keeps its own
+   values and is a reference artifact only.
+4. **Quant wiring: settled** — `GOLDLENS_QUANT_PACKAGE=quant.service_adapter`
+   (see `backend/.env.example`; run uvicorn from `backend/` with
+   `PYTHONPATH=..`). Until wired — or when history is insufficient —
+   signals/backtests remain honest NO_TRADE / runnable:false.
+5. **Z-score history is not an API response shape** — Signal Forensics renders
+   the single decision + reason codes (z stays null until the quant service is
+   wired). The old z-series page section is removed rather than faked.
+6. **Contract-registry view replaces "eligible contracts"** while specs are
+   unverified: verification-first listing with ≤40 rows default and an explicit
+   "Show all" toggle; nothing is silently hidden.
