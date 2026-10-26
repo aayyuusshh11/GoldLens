@@ -1,0 +1,23 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+.coverage
+htmlcov/
+.env
+
+# --- Generated / processed artifacts (never commit databases) ---
+*.duckdb
+*.duckdb.wal
+*.tmp
+*.log
+
+# --- Raw market data sources (user-managed; see also data/.gitignore) ---
+BhavCopyDateWise_*.csv
+
+# --- OS noise ---
+Thumbs.db
+desktop.ini

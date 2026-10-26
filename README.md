@@ -1,121 +1,132 @@
-# GoldLens — MCX Gold Futures Intelligence Platform
+# GoldLens — Data Engineering & Backend Starter
 
-GoldLens is a quantitative analytics and trading engine for MCX Gold calendar spreads (`GOLD` 1kg and `GOLDM` 100g futures).
+**Project:** GoldLens — MCX Gold Futures Relative-Value Intelligence  
+**Owner of this workstream:** Araham (Arhm) Jain  
+**Role:** Data Engineer, Contract Registry, FastAPI, and Storage  
+**Status:** Planning and data audit only; backend implementation has not yet been performed by this document.
 
----
+## 1. Purpose
 
-## Developer Quickstart & Reproducibility Guide
+GoldLens helps researchers inspect comparable MCX gold futures contracts, calculate relative-value signals, and evaluate them with cost-aware chronological backtests. It must be equally willing to return **NO TRADE** when data is insufficient, specifications are unverified, contracts are illiquid, costs erase the apparent edge, or a valid backtest cannot be run.
 
-### 1. Where to Place Manually Downloaded MCX Files
-Place daily MCX Bhavcopy CSV files in:
-```
-data/raw/mcx/BhavCopyDateWise_<DDMMYYYY>.csv
-```
-*(Files placed directly in the repository root are also discovered for backward compatibility, but `data/raw/mcx/` is the standard location).*
+This repository must not present an illustrative calculation as a real trading signal or synthetic history as exchange data.
 
-Official download source: [MCX Bhavcopy Portal](https://www.mcxindia.com/market-data/bhavcopy) (select Instrument `ALL`, click **Show**, and download the daily CSV).
+## 2. Team ownership
 
----
+- **Aayush Thakre — Team lead / frontend / full-stack integration:** React, Vite, TypeScript, Tailwind CSS, shadcn/ui, Recharts, integration and deployment.
+- **Aayush S. Kushwaha — Quantitative analyst:** contract comparability and normalization methodology, spread/z-score definitions, signal rules, transaction-cost assumptions, and backtesting logic.
+- **Araham Jain — Data engineer / backend:** data ingestion and validation, contract registry, storage, FastAPI/Pydantic endpoints, data-quality reporting, backend tests, and handoff documentation.
 
-### 2. How to Run Ingestion & Pipeline
-The ingestion pipeline discovers all genuine files, filters `FUTCOM` contracts, drops options and unpriced marks, resolves key conflicts, and computes daily calendar spreads:
-```powershell
-py -3.13 quant/run_quant.py
-```
-This automatically updates `quant_report.json` with strategy results and diagnostic explanations.
+## 3. Current data audit
 
----
+The supplied file was inspected: `BhavCopyDateWise_16102026 (2).csv`.
 
-### 3. How to Run Validation & Audit Reports
-To validate all ingested files, run schema checks, calculate deduplication metrics, and execute the readiness audit:
-```powershell
-py -3.13 -m quant.ingestion.generate_reports
-```
-This regenerates:
-- `data/reports/DATA_QUALITY_REPORT.md` (and `.json`)
-- `data/reports/BACKTEST_READINESS.md` (and `.json`)
-- Mirrors in `docs/`
+Observed file facts:
+- 15,535 rows and 15 columns.
+- One trading date only: `16 Oct 2026`.
+- 31 distinct raw symbol strings; symbol values include trailing whitespace.
+- Instrument types include `OPTFUT`, `OPTIDX`, `FUTCOM`, and `FUTIDX`.
+- 168 rows have `Instrument Name == FUTCOM`.
+- No exact duplicate full rows were found in the supplied file.
+- `Open`, `High`, and `Low` are missing on 14,592 rows overall. Many option rows have zero volume and a non-null close; these must not be mistaken for executable prices.
+- The file includes futures rows for `GOLD`, `GOLDM`, `GOLDTEN`, `GOLDGUINEA`, and `GOLDPETAL`, but a single snapshot cannot support rolling z-scores, chronological walk-forward backtesting, or claims about historical performance.
+- Gold futures examples on the file date include GOLD Dec-2026 and Feb-2027 expiries, and GOLDM Nov-2026 through Apr-2027 expiries. These are observed rows, **not verified proof that the contracts are comparable**.
+- The volume unit field contains strings such as `5091.000 GRMS`; preserve the raw value and parse quantity/unit separately. Do not assume volume, quotation units, or contract sizes from symbol names.
+- `Close` and `Previous Close` are populated even on many zero-volume rows. A populated value alone is not evidence of a tradable observation.
 
----
+These are descriptive findings from the uploaded file, not verification of MCX contract specifications. Verify current and historical specifications from an authoritative source before marking a contract as eligible.
 
-### 4. How to Run Tests
-Execute the complete test suite:
-```powershell
-py -3.13 -m pytest tests -q
-```
-Current test suite status (executed 2026-10-20, Pass 12): **103 passed, 0 failed**.
+## 4. MVP scope
 
----
+Implement one reproducible pipeline:
 
-### 5. How to Interpret Readiness Status
-Read `data/reports/BACKTEST_READINESS.md`:
-- **`READY`**: All 5 gates passed. At least 30 spread sessions exist for the target pair, 100+ for walk-forward, verified costs are fully configured, and the engine executed cleanly.
-- **`NOT READY`**: At least one gate failed. For example:
-  - `minSpreadObservations`: Requires $\ge 30$ valid dated spread sessions for the target pair (currently 2 sessions).
-  - `walkForwardViability`: Requires $\ge 100$ spread sessions to run expanding-window folds.
-  - `costInputsVerified`: Requires brokerage and slippage to be verified against trader contract notes.
+1. Load a user-provided CSV without changing the original file.
+2. Validate required columns, parse dates, normalize symbol whitespace, and preserve raw source fields.
+3. Distinguish futures from options and reject unsupported instruments from the gold-futures analytics path.
+4. Report missing OHLC values, zero volume/open interest, duplicate business keys, invalid ranges, unparsed units, and unsupported symbols.
+5. Store normalized observations and a provenance-aware contract registry in DuckDB (preferred for the prototype) or a similarly lightweight local store.
+6. Expose documented FastAPI endpoints.
+7. Return a clear data-insufficiency status when historical observations are not sufficient for signal analysis/backtesting.
+8. Provide tests and exact run instructions.
 
-*Important distinction (Pass 11 fix):* The audit strictly reports the time-series spread observations of the target trading pair (`GOLDM`: 2 sessions across 2026-10-16 and 2026-10-19). It never sums cross-sectional candidate counts across unrelated commodities.
+## 5. Suggested repository layout
 
----
-
-### 6. What to Do When Data is Insufficient
-When the dataset has fewer than 30 spread sessions:
-1. The engine refuses to fabricate a backtest and operates in **`diagnostics_only`** mode.
-2. Signal generation outputs `NO TRADE` with rationale `insufficient history for roll z (need >= 15d, lookback 30d)`.
-3. Metrics are withheld (`gross_pnl: null`, `runnable: false`).
-4. **Action required:** Obtain additional daily bhavcopies from MCX (or an authorized EOD feed via `datafeed@mcxindia.com`), place them in `data/raw/mcx/`, and rerun `generate_reports.py`.
-
----
-
-### 7. How to Configure Verified Transaction-Cost Inputs
-Transaction costs are configured via `CostInput` in `quant/config.py`:
-
-```python
-from quant.config import CostInput, StrategyConfig
-
-costs = CostInput(
-    # Statutory / Exchange verified charges:
-    exchange_transaction_bps_on_turnover=0.21,  # Rs 2.10 per lakh (0.0021%, MCX eff 1 Oct 2024)
-    stamp_duty_buy_side_bps_on_turnover=0.2,    # 0.002% BUY side only (Indian Stamp Rules 2019 eff 1 Jul 2020)
-    ctt_bps_on_sell_turnover=1.0,               # 0.01% SELL side only (Finance Act 2013 eff 1 Jul 2013)
-    gst_rate_on_transaction_charges=0.18,       # 18% GST on exchange transaction fees
-    tick_size_rupees_per_quote_unit=1.0,        # Rs 1 per 10g quote unit
-
-    # Trader-specific inputs (must come from broker contract note):
-    brokerage_rupees_per_lot=20.0,              # Supply verified rate from broker
-    slippage_ticks=1.0,                         # Supply measured fill slippage or stated policy
-)
-
-cfg = StrategyConfig(costs=costs)
+```text
+GoldLens/
+├── README.md
+├── docs/
+│   ├── DATA_SCHEMA.md
+│   ├── API_CONTRACT.md
+│   ├── DATA_AUDIT.md
+│   └── HANDOFF_ARHM.md
+├── data/
+│   ├── raw/                 # user-managed source files; do not commit large/private files
+│   └── processed/           # generated local artifacts; normally gitignored
+├── backend/
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── config.py
+│   │   ├── schemas/
+│   │   ├── services/
+│   │   ├── storage/
+│   │   └── api/
+│   ├── tests/
+│   └── requirements.txt
+├── frontend/
+└── .gitignore
 ```
 
-If `brokerage` or `slippage` is unverified, `costs` defaults to `None` and Net P&L is withheld to prevent misleading performance claims.
+Inspect the real repository before creating or modifying this structure. Do not overwrite teammates' files.
 
-See `docs/COST_MODEL.md` for full statutory citations and formulas.
+## 6. Shared data contract
 
----
+The canonical observation model should map applicable source fields to:
 
-### 8. How to Configure the Shared Backend Adapter
-GoldLens integrates with FastAPI via `quant/service_adapter.py`.
+- `trade_date` (date)
+- `contract_id` (stable internal identifier)
+- `symbol` (trimmed canonical symbol; retain original source symbol separately)
+- `expiry_date` (date)
+- `open`, `high`, `low`, `close`, `settlement_price` (nullable numeric values; settlement may be unavailable in this file)
+- `volume_lots` (nullable numeric)
+- `volume_quantity` and `volume_unit` (nullable; parse from source only when reliable)
+- `value_lacs` (nullable numeric; preserve source unit)
+- `open_interest_lots` (nullable numeric)
+- `source_file`, `source_row`, `ingested_at`, and validation metadata.
 
-Set the environment variable in the backend environment:
-```powershell
-$env:GOLDLENS_QUANT_PACKAGE = "quant.service_adapter"
-$env:GOLDLENS_DATA_DIR = "d:/HACKthon/HillToHill/GOLD"  # optional, auto-discovered if not set
-```
+Do not fill missing values with zero. Zero reported volume is a meaningful observed value; missing volume is a different state.
 
-The adapter exposes:
-- `get_quant_service()`
-- `analyze_signal(pair_id, as_of_date)`
-- `run_backtest(pair_id, start_date, end_date, strategy_version)`
+Contract registry records should include `contract_id`, canonical symbol, instrument type, contract size, quantity unit, quotation unit, purity where applicable, tick size, expiry date/rule, effective-from/effective-to dates, verification status, source/provenance, and verification timestamp. Unknown values must remain unknown.
 
-See `docs/BACKEND_BLOCKER3_HANDOFF.md` for backend patch diffs and integration guidelines.
+## 7. API endpoints to coordinate with the team
 
----
+- `GET /api/health`
+- `GET /api/contracts`
+- `GET /api/pairs`
+- `GET /api/pairs/{pair_id}/history`
+- `POST /api/signals/analyze`
+- `POST /api/backtests/run`
+- `GET /api/data-quality`
 
-### 9. Core Conventions
-- **Contract families:** `GOLD` (1 kg / 1000g, rvalue = 100) and `GOLDM` (100g, rvalue = 10).
-- **Quote basis:** ₹ per 10 grams.
-- **Spread convention:** `spread = far_close - near_close` (strictly far minus near).
-- **Execution mode:** `next_close` (causal rolling z-scores; decisions executed at next session close, eliminating look-ahead bias).
+Agree exact request/response types with Aayush and Aayush S. Kushwaha in `docs/API_CONTRACT.md` before integration. Signal and backtest endpoints must return explicit warnings or a structured refusal when there is not enough verified history.
+
+## 8. Safety and research integrity
+
+- Never infer contract size, purity, quote units, or eligibility from a symbol alone.
+- Never describe one date of data as historical backtest data.
+- Never introduce future observations into a signal or backtest decision.
+- Do not treat option contracts as gold futures.
+- Do not treat zero-volume rows as liquid tradable observations.
+- Do not silently repair or discard rows without reporting counts and reasons.
+- Keep raw source data immutable and attach provenance to processed records.
+- Make `NO TRADE` a first-class, explainable result.
+
+## 9. Definition of done for Arhm's workstream
+
+- CSV ingestion is repeatable and validates the supplied file.
+- Data-quality summary is available via API and documented.
+- Contract registry records verified vs unknown fields and their sources.
+- Local storage can be rebuilt from the original input.
+- FastAPI endpoints and Pydantic schemas are documented and tested.
+- Tests cover malformed files, missing fields, invalid dates, duplicate keys, zero volume, missing OHLC, and unsupported instrument types.
+- Insufficient history is explicitly reported for rolling analytics and backtests.
+- Handoff notes tell the other two developers exactly how to run the backend and what API fields are stable.

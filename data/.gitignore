@@ -1,0 +1,4 @@
+# GoldLens data artifacts: user-managed raw source files and generated
+# processed artifacts (including the DuckDB database) are never committed.
+*
+!.gitignore

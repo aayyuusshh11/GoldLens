@@ -1,137 +1,223 @@
-# GoldLens HTTP API Contract — Draft v1 aligned to the supplied quant DTO
+# GoldLens — Shared API Contract (Phase 1)
 
-## Important boundary distinction
+Owner: **Araham (Arhm) Jain** (data engineering/backend). Consumers: **Aayush Thakre** (frontend), **Aayush S. Kushwaha** (quant, integration via boundary API `api.py`).
 
-`reference/quant/api.py` is a **Python module API**, not a FastAPI router. It exposes functions that a backend route should call:
+- All endpoints JSON, `Content-Type: application/json`; snake_case fields; ISO-8601 dates (`YYYY-MM-DD`).
+- **Missing values are `null`, never `0`, never `""`.**
+- Backend implementation must not fill gaps with fabricated values: with one trading day of data, signals/backtests/health must surface `INSUFFICIENT_HISTORY` rather than computed history. Quant formulas live in the quant service (Aayush S.K.); backend wires cleanly and refuses gracefully.
+- Base path: none (e.g. `http://127.0.0.1:8000/api/health`).
 
-- `load_dataset(sources) -> ValidatedDataset`
-- `compute_eligible_contracts(frame, cfg) -> list[EligibleContractDTO]`
-- `compute_spreads(frame, cfg, symbol) -> dict` (contains `observations`, `rejections`, and an internal `spread_frame`)
-- `compute_zscores(sf, cfg) -> list[ZScorePointDTO]`
-- `run_strategy_backtest(frame, cfg, symbol) -> BacktestReportDTO`
-- `validate_bhavcopy_frame(frame) -> DataFrame`
+---
 
-The HTTP layer below is the proposed adapter contract. It must call those functions and serialize DTOs via `to_json_dict()`; it must not duplicate the quant logic.
+## 0. Common shapes
 
-## Conventions
-
-- Base path `/api/v1`.
-- JSON keys use the quant DTO's existing snake_case names.
-- Dates are `YYYY-MM-DD`.
-- Preserve `null` values; never coerce unavailable statistics to zero.
-- All backtest report responses should preserve `data_provenance`, `verdict` and `is_valid_backtest`.
-- Keep `config` and cost assumptions visible.
-- The sample JSON is a serialized report, not a live market feed.
-- Error mapping: `QuantAPIError.to_json()` returns `{ "error_code": "...", "message": "...", "details": {} }`. Suggested HTTP status: schema error 422, data-quality rejection 422 or 409 depending on context, unexpected error 500. Keep the JSON error fields.
-
-## GET `/api/v1/health`
-
-Proposed lightweight HTTP health route, not currently defined in `api.py`.
+### Error (all non-2xx responses)
 
 ```json
-{ "status": "ok", "service": "goldlens-api", "quant_module": "loaded" }
+{ "error": { "code": "not_found", "message": "...", "details": { "any": "typed extras" } } }
 ```
 
-Health should not claim that valid historical data exists merely because the process is alive.
+`code` ∈ `invalid_input` | `not_found` | `data_unavailable` | `internal_error`.
 
-## GET `/api/v1/report?symbol=GOLDM`
-
-Runs or retrieves a report for a symbol family using configured data sources and strategy config. Exact source selection and config loading must be agreed with backend/quant owners.
-
-Response: serialized `BacktestReportDTO`, with these top-level keys:
+### Warning/tool note item (used throughout)
 
 ```json
-{
-  "config": {},
-  "data_provenance": {
-    "trading_days": 0,
-    "date_range": [],
-    "spec_checks": []
-  },
-  "pair": {},
-  "spread_observations": [],
-  "z_score": [],
-  "signals": [],
-  "trades": [],
-  "eligible_contracts": [],
-  "metrics": null,
-  "train_metrics": null,
-  "test_metrics": null,
-  "walk_forward_cmp": [],
-  "verdict": "",
-  "is_valid_backtest": false
-}
+{ "code": "INSUFFICIENT_HISTORY", "severity": "warning", "count": 1, "message": "…" }
 ```
 
-The object above shows the contract shape only; it is not a valid result. Use the supplied sample file to inspect concrete field names.
+`severity` ∈ `info` | `warning` | `error` | `critical`.
 
-## Report fields
+---
 
-### `config`
-Expected keys in the supplied sample: `lookback_days`, `z_entry`, `z_exit`, `stop_z`, `max_holding_days`, `min_hist_days`, `exec_mode`, `allow_overlap`, `lots_per_leg`, `walk_forward_folds`, `costs`.
+## 1. `GET /api/health`
 
-### `data_provenance`
-- `trading_days`: distinct trading days in the source frame.
-- `date_range`: first and last dates.
-- `spec_checks`: source/specification cross-check messages, if available.
+```json
+{ "status": "healthy", "service": "goldlens-backend", "version": "0.1.0", "data_available": true, "distinct_trade_dates": 1, "latest_data_date": "2026-10-16" }
+```
 
-### `pair`
-- `symbol`, `near_expiry`, `far_expiry`
-- `rejections`: counts such as invalid price rows dropped and stale rows flagged.
-- `filter_failures`: count of filter failures.
+`data_available` mirrors whether observations exist in storage (false if empty DB, `distinct_trade_dates` 0, `latest_data_date` null).
 
-### `spread_observations[]`
-`trade_date`, `symbol`, `near_expiry`, `far_expiry`, `near_close`, `far_close`, `spread`, `stale`.
+## 2. `GET /api/contracts?symbol=GOLD&verified=any&limit=500&offset=0`
 
-### `z_score[]`
-`trade_date`, `spread`, `rolling_mean`, `rolling_std`, `z`. Rolling fields can be null when history is insufficient.
-
-### `signals[]`
-`trade_date`, `signal`, `z`, `spread`, `mean`, `std`, `filters_ok`, `filter_reason`, `position_before`, `rationale`, `no_trade_reason`.
-
-### `trades[]`
-`leg_symbol`, `direction`, `entry_signal_date`, `entry_exec_date`, `entry_spread`, `entry_z`, `entry_rationale`, `exit_exec_date`, `exit_spread`, `exit_reason`, `gross_pnl_rupees`, `holding_days`.
-
-### `eligible_contracts[]`
-`trade_date`, `symbol`, `expiry`, `days_to_expiry`, `close`, `volume_lots`, `open_interest_lots`, `value_lakhs`, `eligible`, `reason`, `lot_size_g`, `quote_basis_g`.
-
-### `metrics`
-`status`, `n_days`, `n_trades`, `gross_pnl_rupees`, `net_pnl_rupees`, `win_rate`, `max_drawdown_rupees`, `net_max_drawdown_rupees`, `sharpe_ratio`, `net_sharpe_ratio`, `total_cost_rupees`, `avg_pnl_per_trade`, `notes`, `costs_assumption`.
-
-### Remaining top-level fields
-- `train_metrics`, `test_metrics`: metrics object or null.
-- `walk_forward_cmp`: list of fold-comparison results; inspect implementation for exact inner keys.
-- `verdict`: human-readable validity/limitation statement.
-- `is_valid_backtest`: boolean validity gate.
-
-## Proposed supporting routes
-
-### GET `/api/v1/eligible-contracts?symbol=GOLDM` (optional)
-Returns an object such as `{ "items": [...] }` based on `compute_eligible_contracts`. Use the full report endpoint if this duplicates computation unnecessarily.
-
-### GET `/api/v1/data-quality`
-Returns source paths, date range, distinct trading days, required-column validation and specification checks. This endpoint is a proposed HTTP adapter; its exact schema must be agreed with the backend owner.
-
-### POST `/api/v1/report`
-Optional if report generation requires a body. Request should define `symbol` and explicitly whitelisted strategy overrides. Do not accept arbitrary Python paths or arbitrary config fields from public clients.
-
-## Error shape
+Returns contract registry records (shape per DATA_SCHEMA §3). Query params optional; `symbol` matches canonical trimmed symbol; `limit` default 500. Response:
 
 ```json
 {
-  "error_code": "invalid_input_schema",
-  "message": "frame missing required columns",
-  "details": {
-    "missing_columns": ["close"]
-  }
+  "total": 15,
+  "count": 15,
+  "offset": 0,
+  "contracts": [
+    {
+    "contract_id": "FUTCOM_GOLD_20261204",
+    "symbol": "GOLD",
+    "instrument_type": "FUTCOM",
+    "expiry_date": "2026-12-04",
+    "contract_size": null,
+    "units": null,
+    "quotation_unit": null,
+    "purity": null,
+    "tick_size": null,
+    "expiry_rule": null,
+    "verification_status": "unverified",
+    "verified_fields": [],
+    "source": null,
+    "verification_timestamp": null,
+    "effective_from": null,
+    "effective_to": null,
+    "first_observed_date": "2026-10-16",
+    "last_observed_date": "2026-10-16"
+    }
+  ]
 }
 ```
 
-Actual boundary error codes in supplied module:
-- `quant_error`
-- `invalid_input_schema`
-- `data_quality_rejected`
+No contract size/purity/quote unit may ever appear non-null unless verified (`verification_timestamp` + `source` set). Unknown stays null.
 
-## Sample data interpretation
+## 3. `GET /api/pairs`
 
-The provided sample's `data_provenance.trading_days` is 1; `spread_observations` contains one point; `z_score` is null for rolling statistics; `signals` says `NO TRADE` because history is insufficient; `metrics.status` is `diagnostics_only`; `metrics.net_pnl_rupees` is null because costs are not configured; `is_valid_backtest` is false. The UI must preserve and explain these values.
+Candidate comparable pairs of **verified-eligible** contracts, near/far expiry, same canonical symbol. Selection criteria are quant-owned; until thresholds are confirmed, backend lists observed near/far combinations with explicit status.
+
+```json
+{
+  "pairs": [
+    {
+      "pair_id": "GOLDM_near20261204_far20270105",
+      "symbol": "GOLDM",
+      "near": { "contract_id": "FUTCOM_GOLDM_20261204", "expiry_date": "2026-12-04" },
+      "far":  { "contract_id": "FUTCOM_GOLDM_20270105", "expiry_date": "2027-01-05" },
+      "status": "candidate_only",
+      "reason_codes": ["UNVERIFIED_SPEC"],
+      "history_days": 1
+    }
+  ],
+  "warnings": [ { "code": "UNVERIFIED_SPEC", "severity": "warning", "count": 15, "message": "…" } ]
+}
+```
+
+`status` ∈ `candidate_only` | `eligible` (once quant thresholds + verified specs agree that day). No pair is ever marked tradeable from a single day.
+
+## 4. `GET /api/pairs/{pair_id}/history?start_date=&end_date=`
+
+```json
+{
+  "pair_id": "GOLDM_near20261204_far20270105",
+  "symbol": "GOLDM",
+  "near_expiry": "2026-12-04",
+  "far_expiry": "2027-01-05",
+  "observations": [ { "trade_date": "2026-10-16", "near_close": 147866.0, "far_close": 149227.0, "spread": 1361.0, "status": "single_reference", "reason_codes": ["STALE_PRICE"] } ],
+  "count": 1,
+  "warnings": [ { "code": "INSUFFICIENT_HISTORY", "severity": "warning", "count": 1, "message": "…" } ]
+}
+```
+
+With one date, `observations` may be a single reference row or empty; multi-day series never exists at this stage. `spread` here is the arithmetic difference of the two reported closes (unit = INR), explicitly labeled reference/`single_reference` when zero-volume rows are involved.
+
+## 5. `POST /api/signals/analyze`
+
+Request:
+
+```json
+{ "pair_id": "GOLDM_near20261204_far20270105", "as_of_date": "2026-10-16" }
+```
+
+Response — required fields (agreed; extra optional fields allowed):
+
+```json
+{
+  "pair_id": "GOLDM_near20261204_far20270105",
+  "as_of_date": "2026-10-16",
+  "decision": "NO_TRADE",
+  "reason_codes": ["INSUFFICIENT_HISTORY", "UNVERIFIED_SPEC"],
+  "spread": 1361.0,
+  "z_score": null,
+  "gross_edge": null,
+  "estimated_cost": null,
+  "net_edge": null,
+  "data_quality": { "distinct_trade_dates": 1, "latest_data_date": "2026-10-16", "trading_days_available": 1, "warnings": [ { "code": "INSUFFICIENT_HISTORY", "severity": "warning", "count": 1, "message": "…" } ] },
+  "notes": "z-score/EV fields left null until multi-day data arrives; nothing fabricated"
+}
+```
+
+- `decision` ∈ `NO_TRADE` | `BUY_NEAR_SELL_FAR` | `SELL_NEAR_BUY_FAR` (enum wording pending quant confirmation — §6 in DATA_SCHEMA.md).
+- **Never** invent z-scores/costs from one day; `null` + `reason_codes` is the honest response.
+
+## 6. `POST /api/backtests/run`
+
+Request:
+
+```json
+{ "pair_id": "GOLDM_near20261204_far20270105", "start_date": "2026-10-16", "end_date": "2026-10-16", "strategy_version": "default" }
+```
+
+Response — required fields (agreed):
+
+```json
+{
+  "run_id": "bt_20261020T101520Z_0001",
+  "pair_id": "GOLDM_near20261204_far20270105",
+  "strategy_version": "default",
+  "evaluation_period": { "start_date": "2026-10-16", "end_date": "2026-10-16" },
+  "observation_count": 0,
+  "completed_trades": 0,
+  "gross_pnl": null,
+  "estimated_costs": null,
+  "net_pnl": null,
+  "max_drawdown": null,
+  "assumptions": [],
+  "warnings": [ { "code": "INSUFFICIENT_HISTORY", "severity": "error", "count": 1, "message": "walking-forward backtest refused: 1 distinct trade date < minimum" } ],
+  "runnable": false
+}
+```
+
+- `runnable: false` + nulls whenever historicity minimum (agreed minimum with quant, currently ≥ 30 spread observations) is unmet. No fake observation counts/P&L.
+
+## 7. `GET /api/data-quality`
+
+```json
+{
+  "generated_at": "2026-10-20T10:30:00Z",
+  "sources": [ { "file": "BhavCopyDateWise_16102026 (2).csv", "ingested_at": "2026-10-20T10:05:12Z", "input_rows": 15535, "output_columns": 15, "unique_dates": 1, "dates": ["2026-10-16"], "status": "ingested" } ],
+  "rows": { "total": 15535, "future_rows": 168, "options_rows": 14730, "index_futures_rows": 7, "index_options_rows": 630, "accepted": 15535, "rejected": 0, "warned": 14592 },
+  "issues": [
+    { "code": "ZERO_VOLUME_ROWS", "severity": "warning", "count": 14592, "message": "…" },
+    { "code": "MISSING_VOLUME_ROWS", "severity": "warning", "count": 0, "message": "…" },
+    { "code": "MISSING_OHLC_ROWS", "severity": "warning", "count": 14592, "message": "…" },
+    { "code": "MISSING_SETTLEMENT_ROWS", "severity": "critical", "count": 15535, "message": "..." },
+    { "code": "ZERO_OI_ROWS", "severity": "info", "count": 14346, "message": "…" },
+    { "code": "INVALID_OHLC_RANGE_ROWS", "severity": "error", "count": 0, "message": "…" },
+    { "code": "DUPLICATE_BUSINESS_KEYS", "severity": "error", "count": 0, "message": "…" },
+    { "code": "UNSUPPORTED_INSTRUMENT_ROWS", "severity": "info", "count": 15360, "message": "…" }
+  ],
+  "contract_spec_verification": { "verified": 0, "unverified": 15, "conflicting": 0 },
+  "history_sufficiency": { "distinct_trade_dates": 1, "minimum_required": 30, "sufficient_for_signal": false, "sufficient_for_backtest": false }
+}
+```
+
+Zero volume and missing volume are separated (`ZERO_VOLUME_ROWS` vs `MISSING_VOLUME_ROWS`). Contract spec verification status always visible. Data quality **never** claims multi-day history when only one date exists.
+
+## 8. `POST /api/ingest` (internal utility; not for frontend)
+
+```json
+Request: { "path": "relative/or/absolute/path.csv" }        // default: bundled CSV
+Response: { "accepted_rows": 15535, "rejected_rows": 0, "warned_rows": 14592, "ingestion_id": "ing_...", "warnings": [...] }
+```
+
+---
+
+## 9. HTTP status mapping
+
+| Status | When |
+|---|---|
+| 200 | success (including `runnable:false` backtest refusal body) |
+| 400 | malformed request body / unknown enum |
+| 404 | unknown `pair_id` / unknown route |
+| 409 | duplicate ingestion conflicts that cannot be upserted |
+| 422 | validation error (FastAPI default body for request validation) |
+| 503 | storage unavailable (no DB file / empty and unrebuildable) |
+
+## 10. Decisions pending confirmation (carried from DATA_SCHEMA §6)
+
+1. Signal `decision` enum wording (quant).
+2. Backtest historical minimums: observation count and distinct-date count (quant: proposed ≥ 30 obs / ≥ 30 days).
+3. `pair_id` format `SYMBOL_nearYYYYMMDD_farYYYYMMDD` (frontend confirm readability).
+4. default `limit=500` for `/api/contracts` (frontend confirm).
