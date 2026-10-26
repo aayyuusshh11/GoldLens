@@ -1,203 +1,269 @@
-import { useEffect, useState } from "react";
-import type { BacktestReportDTO } from "../../types/api";
-import { useReport } from "../../app/ReportContext";
-import { HttpClient, buildQuery } from "../../lib/api/client";
-import { ApiRequestError, describeError } from "../../lib/api/errors";
-import {
-  VALIDITY_GATE_MIN_OBSERVATIONS,
-  countStale,
-  dateRangeLabel,
-  gapDaysCount,
-  netWithheldReason,
-  parseSpecChecks,
-} from "../../lib/reportAnalysis";
+import type { ReactNode } from "react";
+import type { DataQualityReportDTO } from "../../types/api";
+import { useApi, type Slice } from "../../app/ApiContext";
 import { formatInt } from "../../lib/formatters/format";
 import { PageHeader } from "../../components/layout/PageHeader";
 import { SectionPanel } from "../../components/primitives/SectionPanel";
-import { DataNotice } from "../../components/primitives/DataNotice";
-import { ReasonList } from "../../components/primitives/ReasonList";
-import { StatusBadge } from "../../components/layout/Badges";
+import {
+  SeverityBadge,
+  StatusBadge,
+  SufficiencyBadge,
+  VerificationBadge,
+} from "../../components/layout/Badges";
+import { LoadingState } from "../../components/states/LoadingState";
+import { ErrorState } from "../../components/states/ErrorState";
+import { EmptyState } from "../../components/states/EmptyState";
 import { MethodologyNotes } from "./MethodologyNotes";
 
-const REQUIRED_FRAME_COLUMNS = [
-  "trade_date",
-  "symbol",
-  "instrument",
-  "expiry_ts",
-  "close",
-  "volume_lots",
-  "open_interest_lots",
-  "value_lakhs",
-] as const;
-
-type ProbeState =
-  | { state: "fixture" | "checking" | "loaded" }
-  | { state: "pending"; error: string };
-
-/**
- * Proposed GET /api/v1/data-quality probe. The route is pending in the
- * contract draft; any failure degrades into a transparent notice and the page
- * falls back to provenance facts the loaded report already carries — which
- * keeps the page useful both before and after the backend ships the route.
- */
-function useDataQualityProbe(baseUrl: string | null): ProbeState {
-  const [state, setState] = useState<ProbeState>({
-    state: baseUrl === null ? "fixture" : "checking",
-  });
-
-  useEffect(() => {
-    if (baseUrl === null) return;
-    let cancelled = false;
-    const client = new HttpClient(baseUrl);
-    client
-      .getJson<unknown>(`/data-quality${buildQuery({})}`, (raw) => raw)
-      .then((sources) => {
-        if (!cancelled) setState({ state: "loaded" });
-        void sources;
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        const appError =
-          error instanceof ApiRequestError ? error.appError : describeError(error);
-        setState({ state: "pending", error: appError.message });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [baseUrl]);
-
-  return state;
-}
-
-function SpecCheckList({ specChecks }: { specChecks: string[] }) {
-  const parsed = parseSpecChecks(specChecks);
-  if (parsed.length === 0) {
-    return (
-      <p className="text-sm text-mute">No specification cross-checks reported for this dataset.</p>
-    );
-  }
+function KeyValueRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <ul className="space-y-2">
-      {parsed.map((check) => (
-        <li key={`${check.ok}-${check.text.slice(0, 24)}`} className="flex items-start gap-2 text-sm">
-          <StatusBadge tone={check.ok ? "pos" : "neg"}>{check.ok ? "pass" : "fail"}</StatusBadge>
-          <span className="min-w-0 font-mono text-xs text-mute">{check.text}</span>
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b border-line/60 py-2 last:border-b-0">
+      <dt className="text-sm text-mute">{label}</dt>
+      <dd className="min-w-0 text-sm font-medium text-ink">{children}</dd>
+    </div>
   );
 }
 
-export function DataQualityPage({ report }: { report: BacktestReportDTO }) {
-  const { source } = useReport();
-  const probe = useDataQualityProbe(source.mode === "live" ? source.config.baseUrl : null);
-  const staleCount = countStale(report.spread_observations);
-  const gaps = gapDaysCount(report.spread_observations.map((o) => o.trade_date));
-  const withheld = netWithheldReason(report, report.metrics);
+/**
+ * The dq slice is the page's whole data source: skeleton while it first loads,
+ * ErrorState (with a retry) when it failed with nothing to show, and last-good
+ * data under a labeled notice while a refresh is (or was) in flight.
+ */
+function DqBoundary({
+  slice,
+  refresh,
+  children,
+}: {
+  slice: Slice<DataQualityReportDTO>;
+  refresh: () => void;
+  children: (report: DataQualityReportDTO) => ReactNode;
+}) {
+  if (slice.data !== null) {
+    return (
+      <div>
+        {slice.refreshing && (
+          <div className="mb-3">
+            <p role="status" className="text-xs font-medium text-warn">
+              Refreshing the report… the values below are the last good data.
+            </p>
+          </div>
+        )}
+        {slice.key === "error" && slice.error !== null && (
+          <div className="mb-3">
+            <p role="alert" className="text-xs text-neg">
+              Refresh failed: {slice.error.message} — showing the last good data.{" "}
+              <button type="button" onClick={refresh} className="font-medium text-gold hover:underline">
+                Retry
+              </button>
+            </p>
+          </div>
+        )}
+        {children(slice.data)}
+      </div>
+    );
+  }
+  if (slice.key === "error" && slice.error !== null) {
+    return <ErrorState error={slice.error} title="Data-quality report failed" onRetry={refresh} />;
+  }
+  if (slice.key === "ready") {
+    return <EmptyState title="Data-quality report returned no data" />;
+  }
+  return <LoadingState label="Loading data-quality report…" rows={6} wide />;
+}
+
+/** dates_available: full list while small, honest first/last + count when long. */
+function DatesAvailable({ dates }: { dates: string[] }) {
+  if (dates.length === 0) {
+    return <p className="text-sm text-mute">No trade dates recorded for this ingest.</p>;
+  }
+  const first = dates[0] ?? "";
+  const last = dates[dates.length - 1] ?? "";
+  return (
+    <div>
+      <p className="text-xs text-mute">
+        {formatInt(dates.length)} trade date(s) available —{" "}
+        <span className="font-mono tabular">
+          {first} → {last}
+        </span>
+      </p>
+      {dates.length <= 12 && (
+        <ul className="mt-2 flex flex-wrap gap-2">
+          {dates.map((date) => (
+            <li key={date}>
+              <span className="rounded border border-line bg-elevated px-2 py-0.5 font-mono text-[11px] text-mute">
+                {date}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Data Quality — the ingest's own accounting from GET /api/data-quality: row
+ * counts, per-file sources, issue codes with verbatim messages, contract-spec
+ * verification and the history-sufficiency gates. Nothing is derived or
+ * re-summarized beyond collapsing repeated counts; messages render verbatim.
+ */
+export function DataQualityPage() {
+  const { dq, refreshDq } = useApi();
 
   return (
     <div>
       <PageHeader
         kicker="Data Quality"
-        title="Provenance, validity rules and methodology"
-        subtitle="Where the data came from, what the pipeline verified, and what still needs the quant owner's confirmation."
+        title="Ingest provenance, issues and sufficiency"
+        subtitle="Row accounting, source files and the pipeline's own issue messages from GET /api/data-quality. Zero-count rows stay listed — a zero is a fact, not an omission."
       />
 
-      {probe.state === "pending" && (
-        <div className="mb-4">
-          <DataNotice tone="info" title="GET /api/v1/data-quality is not implemented yet">
-            <p>
-              The endpoint is proposed in docs/API_CONTRACT.md but the backend has not shipped
-              it ({probe.error !== undefined ? `probe error: ${probe.error}` : "route missing"}).
-              Everything below is derived from provenance fields in the loaded report.
-            </p>
-          </DataNotice>
-        </div>
-      )}
+      <DqBoundary slice={dq} refresh={refreshDq}>
+        {(report) => (
+          <div className="space-y-4">
+            {/* Sources: file-level accounting straight from the report. */}
+            <SectionPanel
+              kicker="Provenance"
+              title="Ingested sources"
+              caption={`Generated ${report.generated_at}. File paths and timestamps come verbatim from the ingest report.`}
+            >
+              <div className="overflow-x-auto rounded-lg border border-line">
+                <table className="w-full min-w-[720px] text-left text-sm">
+                  <caption className="sr-only">Ingested source files and their row accounting</caption>
+                  <thead className="bg-elevated">
+                    <tr className="text-[11px] uppercase tracking-widest text-mute">
+                      <th scope="col" className="px-3 py-2 font-semibold">File</th>
+                      <th scope="col" className="px-3 py-2 font-semibold">Ingested</th>
+                      <th scope="col" className="px-3 py-2 text-right font-semibold">Input rows</th>
+                      <th scope="col" className="px-3 py-2 text-right font-semibold">Accepted / rejected</th>
+                      <th scope="col" className="px-3 py-2 text-right font-semibold">Inserted / skipped</th>
+                      <th scope="col" className="px-3 py-2 font-semibold">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.sources.map((source) => (
+                      <tr key={source.file} className="border-t border-line/40">
+                        <td className="px-3 py-2 font-mono text-xs text-ink">{source.file}</td>
+                        <td className="px-3 py-2 font-mono text-xs tabular text-mute">{source.ingested_at}</td>
+                        <td className="px-3 py-2 text-right font-mono tabular text-ink">
+                          {formatInt(source.input_rows)}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono tabular text-ink">
+                          {formatInt(source.accepted_rows)} / {formatInt(source.rejected_rows)}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono tabular text-ink">
+                          {formatInt(source.observations_inserted)} / {formatInt(source.observations_skipped)}
+                        </td>
+                        <td className="px-3 py-2">
+                          <StatusBadge tone="mute">{source.status}</StatusBadge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </SectionPanel>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <SectionPanel kicker="Provenance" title="Source coverage (from report payload)">
-          <dl className="mt-2 space-y-2 text-sm">
-            <div className="flex items-baseline justify-between gap-4">
-              <dt className="text-mute">Session range</dt>
-              <dd className="font-mono tabular text-ink">
-                {dateRangeLabel(report.data_provenance.date_range)}
-              </dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-4">
-              <dt className="text-mute">Distinct trading days</dt>
-              <dd className="font-mono tabular text-ink">{formatInt(report.data_provenance.trading_days)}</dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-4">
-              <dt className="text-mute">Spread observations</dt>
-              <dd className="font-mono tabular text-ink">{formatInt(report.spread_observations.length)}</dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-4">
-              <dt className="text-mute">Validity gate</dt>
-              <dd className="text-ink">
-                {report.is_valid_backtest
-                  ? "passed"
-                  : `failed (≥ ${VALIDITY_GATE_MIN_OBSERVATIONS} observations required)`}
-              </dd>
-            </div>
-          </dl>
-          <p className="mt-3 text-xs text-mute">
-            Source file paths are carried by the backend dataset loader; they will appear in
-            the /data-quality route once implemented. The report itself exposes coverage only —
-            the UI does not guess file paths.
-          </p>
-        </SectionPanel>
+            {/* Row totals grid. */}
+            <SectionPanel kicker="Rows" title="Row accounting">
+              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                {(
+                  [
+                    ["Total", report.rows.total],
+                    ["FUTCOM", report.rows.futcom_rows],
+                    ["Options", report.rows.options_rows],
+                    ["FUTIDX", report.rows.futidx_rows],
+                    ["Rejected", report.rows.rejected_rows],
+                  ] as Array<[string, number]>
+                ).map(([label, value]) => (
+                  <div key={label} className="rounded-lg border border-line bg-elevated px-3 py-2">
+                    <dt className="text-[11px] uppercase tracking-widest text-mute">{label}</dt>
+                    <dd className="font-mono tabular text-base text-ink">{formatInt(value)}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="mt-3 text-xs text-mute">
+                Rejected rows are counted, never silently dropped; unsupported instrument rows
+                (options/index) are excluded from analytics and still accounted for in the
+                issue list below.
+              </p>
+            </SectionPanel>
 
-        <SectionPanel kicker="Pipeline checks" title="Specification cross-checks">
-          <SpecCheckList specChecks={report.data_provenance.spec_checks} />
-        </SectionPanel>
+            {/* Issues: severity + code + count + verbatim message. */}
+            <SectionPanel kicker="Issues" title="Issue list">
+              {report.issues.length === 0 ? (
+                <EmptyState title="No issues reported for this dataset" />
+              ) : (
+                <ul className="space-y-3">
+                  {report.issues.map((issue) => (
+                    <li
+                      key={issue.code}
+                      className="border-b border-line/60 pb-3 last:border-b-0 last:pb-0"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <SeverityBadge severity={issue.severity} />
+                        <span className="font-mono text-xs text-ink">{issue.code}</span>
+                        <span className="font-mono tabular text-xs text-mute">
+                          × {formatInt(issue.count)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm text-mute">{issue.message}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </SectionPanel>
 
-        <SectionPanel kicker="Data rules" title="Quality observations for this run">
-          <ReasonList
-            items={[
-              `${formatInt(staleCount)} observation(s) flagged stale by the pipeline (leg prices not trusted on those dates).`,
-              gaps > 0
-                ? `${formatInt(gaps)} calendar gap(s) > 1 day between plotted sessions (weekends/holidays) — points are not interpolated across them.`
-                : "No calendar gaps beyond weekends in the plotted range.",
-              "Null z / mean / std remain null in tables and charts (rendered \"not computed\").",
-              "Rejections are reported in pair.rejections counts instead of being dropped silently.",
-            ]}
-          />
-          {withheld !== null && (
-            <div className="mt-3">
-              <DataNotice tone="warn" title="Costs governance">
-                {withheld}
-              </DataNotice>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {/* Contract spec verification counts. */}
+              <SectionPanel kicker="Verification" title="Contract spec verification">
+                <dl>
+                  <KeyValueRow label="Verified with a source">
+                    <span className="inline-flex items-center gap-2">
+                      <VerificationBadge status="verified" />
+                      <span className="font-mono tabular">{formatInt(report.contract_spec_verification.verified)}</span>
+                    </span>
+                  </KeyValueRow>
+                  <KeyValueRow label="Unverified (specs stay null)">
+                    <span className="inline-flex items-center gap-2">
+                      <VerificationBadge status="unverified" />
+                      <span className="font-mono tabular">{formatInt(report.contract_spec_verification.unverified)}</span>
+                    </span>
+                  </KeyValueRow>
+                  <KeyValueRow label="Conflicting sources">
+                    <span className="inline-flex items-center gap-2">
+                      <VerificationBadge status="conflicting" />
+                      <span className="font-mono tabular">{formatInt(report.contract_spec_verification.conflicting)}</span>
+                    </span>
+                  </KeyValueRow>
+                </dl>
+              </SectionPanel>
+
+              {/* History sufficiency gates with the minimum shown next to the count. */}
+              <SectionPanel kicker="Run gates" title="History sufficiency">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <SufficiencyBadge ok={report.history_sufficiency.sufficient_for_signal} what="Signal" />
+                  <SufficiencyBadge ok={report.history_sufficiency.sufficient_for_backtest} what="Backtest" />
+                </div>
+                <dl>
+                  <KeyValueRow label="Distinct trade dates / minimum required">
+                    <span className="font-mono tabular">
+                      {formatInt(report.history_sufficiency.distinct_trade_dates)} of ≥{" "}
+                      {formatInt(report.history_sufficiency.minimum_required)}
+                    </span>
+                  </KeyValueRow>
+                </dl>
+                <DatesAvailable dates={report.dates_available} />
+              </SectionPanel>
             </div>
-          )}
-        </SectionPanel>
 
-        <SectionPanel kicker="Contract" title="Columns validated by the quant boundary">
-          <p className="text-xs text-mute">
-            The boundary&apos;s <span className="font-mono">validate_bhavcopy_frame</span> rejects
-            frames missing any of these required columns (docs/DATA_SCHEMA.md):
-          </p>
-          <ul className="mt-2 flex flex-wrap gap-2">
-            {REQUIRED_FRAME_COLUMNS.map((column) => (
-              <li key={column}>
-                <span className="rounded border border-line bg-elevated px-2 py-1 font-mono text-[11px] text-mute">
-                  {column}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-3 text-xs text-mute">
-            All-zero trading volume or unparsable dates cause a{" "}
-            <span className="font-mono">data_quality_rejected</span> error — the app renders
-            that as an explicit error state, never as empty content.
-          </p>
-        </SectionPanel>
-      </div>
-
-      <section className="mt-6">
-        <h2 className="mb-3 text-sm font-semibold text-ink">Methodology reference</h2>
-        <MethodologyNotes />
-      </section>
+            <section>
+              <h2 className="mb-3 text-sm font-semibold text-ink">Methodology reference</h2>
+              <MethodologyNotes />
+            </section>
+          </div>
+        )}
+      </DqBoundary>
     </div>
   );
 }

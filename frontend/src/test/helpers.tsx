@@ -1,14 +1,32 @@
-import fixtureJson from "../lib/api/fixtures/api_contract_sample.json";
-import { parseBacktestReport } from "../lib/api/parse";
-import type { BacktestReportDTO } from "../types/api";
+import type { ReactNode } from "react";
+import { render } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { ApiProvider } from "../app/ApiContext";
+import type { AppConfig } from "../lib/api/config";
 
 /**
- * Shared fixture access. The bundled sample goes through the same strict
- * runtime validator as live responses, so corrupt fixtures fail every test
- * loudly instead of passing silently.
+ * Shared test helpers. Fixture mode with ZERO artificial delay: the same
+ * fixture resolvers the app ships with, so UI tests exercise the real data
+ * pipeline instead of mocks that could drift from the settled API contract.
  */
-export function sampleReport(): BacktestReportDTO {
-  return parseBacktestReport(fixtureJson);
+export function makeApiConfig(overrides: Partial<AppConfig> = {}): AppConfig {
+  return {
+    mode: "fixture",
+    baseUrl: null,
+    defaultSymbol: "GOLDM",
+    fixtureDelayMs: 0,
+    ...overrides,
+  };
 }
 
-export { fixtureJson };
+export function renderWithApi(
+  ui: ReactNode,
+  options: { config?: AppConfig; route?: string } = {},
+): ReturnType<typeof render> {
+  const config = options.config ?? makeApiConfig();
+  return render(
+    <MemoryRouter initialEntries={[options.route ?? "/"]}>
+      <ApiProvider config={config}>{ui}</ApiProvider>
+    </MemoryRouter>,
+  );
+}

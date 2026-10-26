@@ -1,11 +1,13 @@
 import type { TooltipProps } from "recharts";
-import { formatDateShort, formatLots, formatPrice, formatRatio } from "../../lib/formatters/format";
+import { formatDateShort, formatPrice } from "../../lib/formatters/format";
 import { SERIES_COLOR } from "../../lib/charts/chartColors";
-import type { SpreadObservationDTO, ZScorePointDTO } from "../../types/api";
+import type { SpreadObservationDTO } from "../../types/api";
 
 /**
- * Custom tooltips. Rows with a null value render "Not computed" — never 0 —
- * per SKILLS.md data rules.
+ * Custom tooltips for the settled pair-history payload (SpreadObservationDTO).
+ * Rows with a null value render "—" — never 0 — and the observation status plus
+ * its reason codes are always surfaced (SKILLS.md data rules). There is no
+ * z-score payload in the settled API, so the old z tooltip is gone.
  */
 
 const TOOLTIP_SHELL =
@@ -20,7 +22,7 @@ function Row({ label, color, value }: { label: string; color?: string; value: st
         )}
         {label}
       </dt>
-      <dd className="font-mono tabular text-ink">{value ?? "Not computed"}</dd>
+      <dd className="font-mono tabular text-ink">{value ?? "—"}</dd>
     </div>
   );
 }
@@ -31,113 +33,102 @@ function titleFromLabel(label: TooltipProps<number, string>["label"]): string {
   return "";
 }
 
-const num = (value: unknown): number | null => (typeof value === "number" ? value : null);
-
-interface RowSpec {
-  key: string;
-  label: string;
-  color: string;
-  format: "price" | "ratio" | "lots";
-}
-
-function rowsFromPayload(
-  payload: TooltipProps<number, string>["payload"],
-  specs: RowSpec[],
-): Array<{ label: string; color?: string; value: string | null }> {
-  if (payload === undefined) return [];
-  const byKey = new Map<string, { value: unknown; color?: string }>();
-  for (const entry of payload) {
-    const key = entry?.dataKey;
-    if (typeof key === "string") byKey.set(key, { value: entry.value, color: entry.color });
-  }
-  return specs.map(({ key, label, color, format }) => {
-    const found = byKey.get(key);
-    const value = num(found?.value);
-    const rendered =
-      value === null
-        ? null
-        : format === "price"
-          ? formatPrice(value)
-          : format === "ratio"
-            ? formatRatio(value)
-            : formatLots(value);
-    return { label, color: found?.color ?? color, value: rendered };
-  });
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+/** Rows shaped like PairHistoryDTO observations: status + reason_codes, no `stale` flag. */
 function isSpreadObservation(value: unknown): value is SpreadObservationDTO {
-  return isRecord(value) && typeof value.stale === "boolean";
+  return (
+    isRecord(value) &&
+    typeof value.trade_date === "string" &&
+    typeof value.status === "string" &&
+    Array.isArray(value.reason_codes)
+  );
 }
 
-function isZPoint(value: unknown): value is ZScorePointDTO {
-  return isRecord(value);
+function observationFromPayload(props: TooltipProps<number, string>): SpreadObservationDTO | null {
+  const row = props.payload?.[0]?.payload;
+  return isSpreadObservation(row) ? row : null;
+}
+
+/** Verbatim status + reason codes for the hovered session. */
+function StatusLine({ observation }: { observation: SpreadObservationDTO }) {
+  return (
+    <p className="mt-1 border-t border-line pt-1">
+      <span className="text-mute">status: </span>
+      <span className="font-mono text-ink">{observation.status}</span>
+      {observation.reason_codes.length > 0 && (
+        <>
+          <span className="text-mute"> · reasons: </span>
+          <span className="font-mono text-warn">{observation.reason_codes.join(", ")}</span>
+        </>
+      )}
+    </p>
+  );
 }
 
 export function NearFarTooltip(props: TooltipProps<number, string>) {
   if (!props.active) return null;
-  const rows = rowsFromPayload(props.payload, [
-    { key: "near_close", label: "near close (₹)", color: SERIES_COLOR.near, format: "price" },
-    { key: "far_close", label: "far close (₹)", color: SERIES_COLOR.far, format: "price" },
-  ]);
+  const observation = observationFromPayload(props);
   return (
     <div className={TOOLTIP_SHELL}>
       <p className="mb-1 font-semibold text-ink">{titleFromLabel(props.label)}</p>
-      <dl className="space-y-1">
-        {rows.map((row) => (
-          <Row key={row.label} label={row.label} color={row.color} value={row.value} />
-        ))}
-      </dl>
+      {observation === null ? (
+        <p className="text-mute">Session details not available.</p>
+      ) : (
+        <>
+          <dl className="space-y-1">
+            <Row
+              label="near close (₹)"
+              color={SERIES_COLOR.near}
+              value={observation.near_close === null ? null : formatPrice(observation.near_close)}
+            />
+            <Row
+              label="far close (₹)"
+              color={SERIES_COLOR.far}
+              value={observation.far_close === null ? null : formatPrice(observation.far_close)}
+            />
+            <Row
+              label="spread (₹)"
+              value={observation.spread === null ? null : formatPrice(observation.spread)}
+            />
+          </dl>
+          <StatusLine observation={observation} />
+        </>
+      )}
     </div>
   );
 }
 
 export function SpreadTooltip(props: TooltipProps<number, string>) {
   if (!props.active) return null;
-  const rows = rowsFromPayload(props.payload, [
-    { key: "spread", label: "spread (₹)", color: SERIES_COLOR.spread, format: "price" },
-  ]);
-  const point = props.payload?.[0]?.payload;
-  const stale = isSpreadObservation(point) && point.stale;
-  return (
-    <div className={TOOLTIP_SHELL}>
-      <p className="mb-1 font-semibold text-ink">
-        {titleFromLabel(props.label)}
-        {stale && <span className="ml-2 text-[11px] font-semibold uppercase text-warn">stale</span>}
-      </p>
-      <dl className="space-y-1">
-        {rows.map((row) => (
-          <Row key={row.label} label={row.label} color={row.color} value={row.value} />
-        ))}
-      </dl>
-    </div>
-  );
-}
-
-export function ZScoreTooltip(props: TooltipProps<number, string>) {
-  if (!props.active) return null;
-  const rows = rowsFromPayload(props.payload, [
-    { key: "z", label: "z", color: SERIES_COLOR.z, format: "ratio" },
-    { key: "rolling_mean", label: "rolling mean (₹)", color: SERIES_COLOR.mean, format: "price" },
-    { key: "rolling_std", label: "rolling std (₹)", color: SERIES_COLOR.mean, format: "price" },
-  ]);
-  const point = props.payload?.[0]?.payload;
+  const observation = observationFromPayload(props);
   return (
     <div className={TOOLTIP_SHELL}>
       <p className="mb-1 font-semibold text-ink">{titleFromLabel(props.label)}</p>
-      <dl className="space-y-1">
-        {rows.map((row) => (
-          <Row key={row.label} label={row.label} color={row.color} value={row.value} />
-        ))}
-      </dl>
-      {isZPoint(point) && point.spread !== null && (
-        <p className="mt-1 border-t border-line pt-1 text-mute">
-          spread on date:{" "}
-          <span className="font-mono tabular text-ink">{formatPrice(point.spread)}</span> (₹)
-        </p>
+      {observation === null ? (
+        <p className="text-mute">Session details not available.</p>
+      ) : (
+        <>
+          <dl className="space-y-1">
+            <Row
+              label="spread (₹)"
+              value={observation.spread === null ? null : formatPrice(observation.spread)}
+            />
+            <Row
+              label="near close (₹)"
+              color={SERIES_COLOR.near}
+              value={observation.near_close === null ? null : formatPrice(observation.near_close)}
+            />
+            <Row
+              label="far close (₹)"
+              color={SERIES_COLOR.far}
+              value={observation.far_close === null ? null : formatPrice(observation.far_close)}
+            />
+          </dl>
+          <StatusLine observation={observation} />
+        </>
       )}
     </div>
   );

@@ -1,161 +1,254 @@
 /**
- * GoldLens frontend DTOs — aligned 1:1 with `reference/quant/api.py`
- * (`BacktestReportDTO` and friends) and `reference/samples/api_contract_sample.json`.
+ * GoldLens frontend DTOs — aligned 1:1 with the SETTLED backend contract:
+ * `origin/backend` → `backend/app/schemas/api_models.py`, `schemas/data_quality.py`,
+ * and docs/API_CONTRACT.md (backend branch version).
  *
- * Field names are the quant module's existing snake_case names and MUST NOT be
- * renamed. Nullable fields stay nullable: null means "not computed /
- * unavailable", never zero. See docs/API_CONTRACT.md and docs/DATA_SCHEMA.md.
+ * P9 note (docs/INTEGRATION_BLOCKERS.md §6): the old single mega-report
+ * (`api_contract_sample.json`) is a quant-boundary reference artefact, NOT an
+ * API response. The settled API is 7 disaggregated routes; the app composes
+ * them per screen. Field names are the backend's snake_case names and MUST NOT
+ * be renamed. Nullable fields stay nullable: null means "not computed /
+ * unknown / unverified", never zero. Two known doc-vs-code deltas are resolved
+ * in favor of the backend code (it is what the server actually emits):
+ *   1. Pair-history observation status: "observation" | "reference_only"
+ *      (doc §4 example says "single_reference" — stale).
+ *   2. Data-quality rows/sources shapes follow schemas/data_quality.py, not
+ *      the doc §7 example.
  */
 
-/** Dates as serialized by the quant boundary: YYYY-MM-DD. */
+/** Dates as serialized by the backend: YYYY-MM-DD. */
 export type IsoDate = string;
 
-/** Symbol families targeted by this research tool. */
-export type ReportSymbol = "GOLD" | "GOLDM";
+/**
+ * Symbol filter identity. NOT a closed enum: symbols come from ingested data
+ * (pairs/contracts), so this is an open string with a runtime-normalized
+ * canonical form (the old hardcoded GOLD|GOLDM list is gone).
+ */
+export type Symbol = string;
 
-/** All selectable families; the fixture sample only has data for GOLDM. */
-export const REPORT_SYMBOLS: readonly ReportSymbol[] = ["GOLD", "GOLDM"];
-
-export interface StrategyConfigDTO {
-  lookback_days: number;
-  z_entry: number;
-  z_exit: number;
-  stop_z: number;
-  max_holding_days: number;
-  min_hist_days: number;
-  /** e.g. "next_close" — execution mode respected by the boundary. */
-  exec_mode: string;
-  allow_overlap: boolean;
-  lots_per_leg: number;
-  walk_forward_folds: number;
-  /** null or "not configured (gross-only)" ⇒ net metrics are withheld. */
-  costs: string | null;
+/** Warning/tool-note item shape used by pairs/history/signals/backtests. */
+export interface WarningItemDTO {
+  code: string;
+  severity: string; // info | warning | error | critical (unknown values render safely)
+  count: number;
+  message: string;
 }
 
-export interface DataProvenanceDTO {
-  trading_days: number;
-  /** [first, last] — may be empty when the backend cannot supply it. */
-  date_range: IsoDate[];
-  /** Strings prefixed "PASS …" / "FAIL …" from the spec cross-check. */
-  spec_checks: string[];
+// --------------------------------------------------------------------- //
+// GET /api/health
+// --------------------------------------------------------------------- //
+
+export interface HealthDTO {
+  status: string;
+  service: string;
+  version: string;
+  data_available: boolean;
+  distinct_trade_dates: number;
+  latest_data_date: IsoDate | null;
 }
 
-export interface PairDTO {
+// --------------------------------------------------------------------- //
+// GET /api/contracts
+// --------------------------------------------------------------------- //
+
+export interface ContractDTO {
+  contract_id: string;
   symbol: string;
-  near_expiry: IsoDate | null;
-  far_expiry: IsoDate | null;
-  /** e.g. { invalid_price_rows_dropped: 0, stale_rows_flagged: 0 } */
-  rejections: Record<string, number>;
-  filter_failures: number;
+  instrument_type: string;
+  expiry_date: IsoDate | null;
+  /** Specification fields stay null until verified — never guessed. */
+  contract_size: number | null;
+  units: string | null;
+  quotation_unit: string | null;
+  purity: string | null;
+  tick_size: number | null;
+  expiry_rule: string | null;
+  verification_status: string;
+  verified_fields: string[];
+  source: string | null;
+  verification_timestamp: string | null;
+  effective_from: IsoDate | null;
+  effective_to: IsoDate | null;
+  first_observed_date: IsoDate | null;
+  last_observed_date: IsoDate | null;
+  updated_at: string | null;
 }
+
+export interface ContractsResponseDTO {
+  total: number;
+  count: number;
+  offset: number;
+  contracts: ContractDTO[];
+}
+
+// --------------------------------------------------------------------- //
+// GET /api/pairs
+// --------------------------------------------------------------------- //
+
+export interface PairLegDTO {
+  contract_id: string;
+  expiry_date: IsoDate;
+}
+
+export interface PairSummaryDTO {
+  pair_id: string;
+  symbol: string;
+  near: PairLegDTO;
+  far: PairLegDTO;
+  /** candidate_only | eligible — "eligible" requires quant confirmation. */
+  status: string;
+  reason_codes: string[];
+  /** Distinct overlapping observation dates for the symbol. */
+  history_days: number;
+}
+
+export interface PairsResponseDTO {
+  pairs: PairSummaryDTO[];
+  warnings: WarningItemDTO[];
+}
+
+// --------------------------------------------------------------------- //
+// GET /api/pairs/{pair_id}/history
+// --------------------------------------------------------------------- //
 
 export interface SpreadObservationDTO {
   trade_date: IsoDate;
-  symbol: string | null;
-  near_expiry: IsoDate | null;
-  far_expiry: IsoDate | null;
-  near_close: number;
-  far_close: number;
-  /** Spread value as produced by the quant pipeline (unit: rupees). */
-  spread: number;
-  stale: boolean;
-}
-
-export interface ZScorePointDTO {
-  trade_date: IsoDate;
+  /** Backend semantic: closing prices as reported; missing = null. */
+  near_close: number | null;
+  far_close: number | null;
+  /** Backend formula: near_close − far_close (can be negative). */
   spread: number | null;
-  rolling_mean: number | null;
-  rolling_std: number | null;
-  /** null = insufficient rolling history. Never render as 0. */
-  z: number | null;
+  /** observation (both legs tradable) | reference_only (never claimed as history). */
+  status: string;
+  /** e.g. ZERO_VOLUME, STALE_PRICE, MISSING_OHLC. */
+  reason_codes: string[];
 }
 
-export interface SignalDTO {
-  trade_date: IsoDate;
-  /** LONG | SHORT | EXIT | NO TRADE — unknown labels still render safely. */
-  signal: string;
-  z: number | null;
-  spread: number | null;
-  mean: number | null;
-  std: number | null;
-  filters_ok: boolean;
-  filter_reason: string | null;
-  position_before: string;
-  rationale: string;
-  no_trade_reason: string | null;
-}
-
-export interface TradeDTO {
-  leg_symbol: string;
-  direction: string;
-  entry_signal_date: IsoDate;
-  entry_exec_date: IsoDate;
-  entry_spread: number;
-  entry_z: number | null;
-  entry_rationale: string;
-  exit_exec_date: IsoDate | null;
-  exit_spread: number | null;
-  exit_reason: string;
-  /** null when withheld (e.g. no completed exit) — never 0. */
-  gross_pnl_rupees: number | null;
-  holding_days: number;
-}
-
-export interface EligibleContractDTO {
-  trade_date: IsoDate | null;
+export interface PairHistoryDTO {
+  pair_id: string;
   symbol: string;
-  expiry: IsoDate | null;
-  days_to_expiry: number | null;
-  close: number | null;
-  volume_lots: number | null;
-  open_interest_lots: number | null;
-  value_lakhs: number | null;
-  eligible: boolean;
-  /** Pipe-separated filter outcome tokens, e.g. "vol<500|oi<1000". */
-  reason: string | null;
-  /** null = no verified specification for this symbol. */
-  lot_size_g: number | null;
-  quote_basis_g: number | null;
+  near_expiry: IsoDate;
+  far_expiry: IsoDate;
+  observations: SpreadObservationDTO[];
+  count: number;
+  warnings: WarningItemDTO[];
 }
 
-export interface MetricsDTO {
-  status: "backtest" | "diagnostics_only" | (string & {});
-  n_days: number;
-  n_trades: number;
-  gross_pnl_rupees: number | null;
-  /** null while costs are unconfigured — must never be displayed as a number. */
-  net_pnl_rupees: number | null;
-  /** Scale (fraction vs percent) unconfirmed by quant owner — see docs/INTEGRATION_BLOCKERS.md. */
-  win_rate: number | null;
-  max_drawdown_rupees: number | null;
-  net_max_drawdown_rupees: number | null;
-  sharpe_ratio: number | null;
-  net_sharpe_ratio: number | null;
-  total_cost_rupees: number | null;
-  avg_pnl_per_trade: number | null;
-  notes: string[];
-  costs_assumption: string | null;
+// --------------------------------------------------------------------- //
+// POST /api/signals/analyze
+// --------------------------------------------------------------------- //
+
+export interface SignalAnalyzeRequestDTO {
+  pair_id: string;
+  /** Optional: backend defaults to the latest stored trade date. */
+  as_of_date?: IsoDate | null;
 }
 
-/**
- * Inner keys of walk-forward comparisons are not documented yet; rendered
- * generically until confirmed (docs/INTEGRATION_BLOCKERS.md).
- */
-export type WalkForwardFold = Record<string, unknown>;
+export interface SignalDataQualityBlockDTO {
+  distinct_trade_dates: number;
+  latest_data_date: IsoDate | null;
+  trading_days_available: number;
+  warnings: WarningItemDTO[];
+}
 
-export interface BacktestReportDTO {
-  config: StrategyConfigDTO;
-  data_provenance: DataProvenanceDTO;
-  pair: PairDTO;
-  spread_observations: SpreadObservationDTO[];
-  z_score: ZScorePointDTO[];
-  signals: SignalDTO[];
-  trades: TradeDTO[];
-  eligible_contracts: EligibleContractDTO[];
-  metrics: MetricsDTO | null;
-  train_metrics: MetricsDTO | null;
-  test_metrics: MetricsDTO | null;
-  walk_forward_cmp: WalkForwardFold[];
-  verdict: string;
-  is_valid_backtest: boolean;
+export interface SignalAnalyzeDTO {
+  pair_id: string;
+  as_of_date: IsoDate;
+  /** NO_TRADE | BUY_NEAR_SELL_FAR | SELL_NEAR_BUY_FAR (decisions pending quant). */
+  decision: string;
+  reason_codes: string[];
+  spread: number | null;
+  /** All null until the quant service is wired (GOLDLENS_QUANT_PACKAGE). */
+  z_score: number | null;
+  gross_edge: number | null;
+  estimated_cost: number | null;
+  net_edge: number | null;
+  data_quality: SignalDataQualityBlockDTO;
+  notes: string | null;
+}
+
+// --------------------------------------------------------------------- //
+// POST /api/backtests/run
+// --------------------------------------------------------------------- //
+
+export interface BacktestRunRequestDTO {
+  pair_id: string;
+  start_date?: IsoDate | null;
+  end_date?: IsoDate | null;
+  strategy_version?: string;
+}
+
+export interface EvaluationPeriodDTO {
+  start_date: IsoDate | null;
+  end_date: IsoDate | null;
+}
+
+export interface BacktestRunDTO {
+  run_id: string;
+  pair_id: string;
+  strategy_version: string;
+  evaluation_period: EvaluationPeriodDTO;
+  observation_count: number;
+  completed_trades: number;
+  /** Metrics exist only from the quant service; guaranteed honest else null. */
+  gross_pnl: number | null;
+  estimated_costs: number | null;
+  net_pnl: number | null;
+  max_drawdown: number | null;
+  assumptions: string[];
+  warnings: WarningItemDTO[];
+  runnable: boolean;
+}
+
+// --------------------------------------------------------------------- //
+// GET /api/data-quality
+// --------------------------------------------------------------------- //
+
+export interface DataQualityIssueDTO {
+  code: string;
+  severity: string; // info | warning | error | critical
+  count: number;
+  message: string;
+}
+
+export interface DqSourceStatusDTO {
+  file: string;
+  ingested_at: string;
+  input_rows: number;
+  accepted_rows: number;
+  rejected_rows: number;
+  observations_inserted: number;
+  observations_skipped: number;
+  status: string;
+}
+
+export interface DqRowsTotalsDTO {
+  total: number;
+  futcom_rows: number;
+  options_rows: number;
+  futidx_rows: number;
+  rejected_rows: number;
+}
+
+export interface DqContractSpecVerificationDTO {
+  verified: number;
+  unverified: number;
+  conflicting: number;
+}
+
+export interface DqHistorySufficiencyDTO {
+  distinct_trade_dates: number;
+  minimum_required: number;
+  sufficient_for_signal: boolean;
+  sufficient_for_backtest: boolean;
+}
+
+export interface DataQualityReportDTO {
+  generated_at: string;
+  sources: DqSourceStatusDTO[];
+  rows: DqRowsTotalsDTO;
+  dates_available: IsoDate[];
+  issues: DataQualityIssueDTO[];
+  contract_spec_verification: DqContractSpecVerificationDTO;
+  history_sufficiency: DqHistorySufficiencyDTO;
 }

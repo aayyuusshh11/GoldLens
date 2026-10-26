@@ -14,7 +14,8 @@ export function ChartPanel({
   title: string;
   question?: string;
   subtitle?: string;
-  legend?: Array<{ color: string; label: string }>;
+  /** variant "dashed" renders a short dashed line swatch (reference-only style). */
+  legend?: Array<{ color: string; label: string; variant?: "solid" | "dashed" }>;
   footer?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -35,11 +36,19 @@ export function ChartPanel({
         <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line px-4 py-2 text-xs text-mute">
           {legend?.map((item) => (
             <span key={item.label} className="inline-flex items-center gap-1.5">
-              <span
-                aria-hidden
-                className="inline-block h-2 w-2 rounded-sm"
-                style={{ backgroundColor: item.color }}
-              />
+              {item.variant === "dashed" ? (
+                <span
+                  aria-hidden
+                  className="inline-block h-0 w-4 border-t-2 border-dashed"
+                  style={{ borderColor: item.color }}
+                />
+              ) : (
+                <span
+                  aria-hidden
+                  className="inline-block h-2 w-2 rounded-sm"
+                  style={{ backgroundColor: item.color }}
+                />
+              )}
               {item.label}
             </span>
           ))}

@@ -1,178 +1,172 @@
-import type { BacktestReportDTO, MetricsDTO } from "../../types/api";
-import { costsNotConfigured, netWithheldReason } from "../../lib/reportAnalysis";
+import type { BacktestRunDTO, WarningItemDTO } from "../../types/api";
+import { formatDateShort, formatInt } from "../../lib/formatters/format";
 import { MetricValue } from "../../components/primitives/MetricValue";
 import { ReasonList } from "../../components/primitives/ReasonList";
 import { DataNotice } from "../../components/primitives/DataNotice";
-import { StatusBadge } from "../../components/layout/Badges";
+import { SectionPanel } from "../../components/primitives/SectionPanel";
+import { SeverityBadge, StatusBadge } from "../../components/layout/Badges";
 
 /**
- * One metrics block (full / train / test) rendered with the costs honesty
- * model:
- *  - gross metrics always labeled "gross";
- *  - withheld net values render an explanation, never 0;
- *  - win_rate/sharpe are unit-less until the quant owner confirms scale.
+ * One settled backtest run (POST /api/backtests/run), rendered honestly:
+ *  - runnable:false is the product — a prominent refusal notice, first.
+ *  - metrics that the API returned as null render "— withheld" with the
+ *    run's own warnings as the reason, verbatim. Never a fabricated 0.
+ *  - counts (observation_count, completed_trades) always render as returned.
  */
-export function BacktestMetrics({
-  report,
-  metrics,
-  variant,
-}: {
-  report: BacktestReportDTO;
-  metrics: MetricsDTO | null;
-  variant: "full" | "train" | "test";
-}) {
-  const costsMissing = costsNotConfigured(report);
-  const withheld = netWithheldReason(report, metrics);
-  const variantTitle = variant === "full" ? "Full-sample metrics" : `${variant} segment`;
+
+function WithheldReasons({ warnings }: { warnings: WarningItemDTO[] }) {
+  if (warnings.length === 0) {
+    return (
+      <p className="text-sm text-mute">No warning was attached to this run for the missing values.</p>
+    );
+  }
+  return (
+    <ul className="space-y-2">
+      {warnings.map((warning) => (
+        <li key={`${warning.code}-${warning.message}`} className="flex flex-wrap items-start gap-2 text-sm">
+          <SeverityBadge severity={warning.severity} />
+          <span className="min-w-0 flex-1">
+            <span className="font-semibold text-warn">{warning.code}</span>{" "}
+            <span className="text-ink">{warning.message}</span>
+          </span>
+          <span className="font-mono text-xs tabular text-mute">× {formatInt(warning.count)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function BacktestMetrics({ run }: { run: BacktestRunDTO }) {
+  const anyNull =
+    run.gross_pnl === null ||
+    run.estimated_costs === null ||
+    run.net_pnl === null ||
+    run.max_drawdown === null;
+  const period = run.evaluation_period;
 
   return (
-    <section className="rounded-xl border border-line bg-surface">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
-        <h3 className="text-sm font-semibold text-ink">{variantTitle}</h3>
-        <div className="flex items-center gap-2">
-          <StatusBadge tone={variant === "full" ? "gold" : "mute"}>{variant}</StatusBadge>
-          <StatusBadge
-            tone={
-              metrics === null
-                ? "mute"
-                : metrics.status === "diagnostics_only"
-                  ? "warn"
-                  : "pos"
-            }
-          >
-            {metrics === null ? "no metrics block" : metrics.status}
+    <SectionPanel
+      kicker="Backtest run"
+      title={`${run.pair_id} · strategy ${run.strategy_version}`}
+      actions={
+        run.runnable ? (
+          <StatusBadge tone="pos" title="The backend marked this evaluation runnable.">
+            runnable
           </StatusBadge>
-        </div>
-      </header>
-
-      {metrics === null ? (
-        <div className="px-4 py-4">
-          <p className="text-sm text-mute">
-            The pipeline did not produce this segment&apos;s metrics (e.g. too few observations
-            for a split). Absent means absent — there is nothing hidden behind a zero here.
-          </p>
-        </div>
-      ) : (
-        <div className="px-4 py-4">
-          <p className="mb-4 text-xs text-mute">
-            Status: <span className="font-medium text-ink">{metrics.status}</span> ·{" "}
-            {metrics.status === "diagnostics_only"
-              ? "figures are diagnostics, not a validated backtest."
-              : "produced under the pipeline's backtest assumptions."}{" "}
-            Costs assumption:{" "}
-            <span className="font-medium text-ink">{metrics.costs_assumption ?? "—"}</span>
-          </p>
-
-          <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-widest text-mute">Sessions (n_days)</p>
-              <MetricValue value={metrics.n_days} kind="int" />
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-widest text-mute">Trades (n_trades)</p>
-              <MetricValue value={metrics.n_trades} kind="int" />
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-widest text-mute">Gross P&amp;L (₹)</p>
-              <MetricValue
-                value={metrics.gross_pnl_rupees}
-                kind="signed_rupees"
-                tone="sign"
-                unavailable="Not computed"
-                note="gross of costs"
-              />
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-widest text-mute">Max drawdown (₹, gross)</p>
-              <MetricValue value={metrics.max_drawdown_rupees} kind="rupees" unavailable="Not computed" />
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-widest text-mute">Avg P&amp;L / trade (₹, gross)</p>
-              <MetricValue
-                value={metrics.avg_pnl_per_trade}
-                kind="signed_rupees"
-                tone="sign"
-                unavailable="Not computed"
-              />
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-widest text-mute">Win rate</p>
-              <MetricValue
-                value={metrics.win_rate}
-                kind="ratio"
-                unavailable="Not computed"
-                note="scale (fraction vs %) pending quant confirmation"
-              />
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-widest text-mute">Sharpe ratio</p>
-              <MetricValue
-                value={metrics.sharpe_ratio}
-                kind="ratio"
-                unavailable="Withheld — sample too short"
-                note="annualization convention pending quant confirmation"
-              />
-            </div>
-          </div>
-
-          <div className="mt-6 border-t border-line pt-4">
-            <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-mute">
-              Net metrics {withheld !== null ? "(withheld)" : "(costs configured)"}
-            </p>
-            <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-              <div>
-                <p className="text-[11px] uppercase tracking-widest text-mute">Net P&amp;L (₹)</p>
-                <MetricValue
-                  value={metrics.net_pnl_rupees}
-                  kind="signed_rupees"
-                  tone="sign"
-                  unavailable="Withheld — costs not configured"
-                />
-              </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-widest text-mute">Net Sharpe</p>
-                <MetricValue
-                  value={metrics.net_sharpe_ratio}
-                  kind="ratio"
-                  unavailable="Withheld — costs not configured"
-                />
-              </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-widest text-mute">Net max drawdown (₹)</p>
-                <MetricValue
-                  value={metrics.net_max_drawdown_rupees}
-                  kind="rupees"
-                  unavailable="Withheld — costs not configured"
-                />
-              </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-widest text-mute">Total transaction cost (₹)</p>
-                <MetricValue
-                  value={metrics.total_cost_rupees}
-                  kind="rupees"
-                  unavailable="Withheld — costs not configured"
-                />
-              </div>
-            </div>
-            {withheld !== null && (
-              <div className="mt-3">
-                <DataNotice tone={costsMissing ? "warn" : "info"} title="Why these net figures are missing">
-                  {withheld}
-                </DataNotice>
-              </div>
-            )}
-          </div>
-
-          {metrics.notes.length > 0 && (
-            <div className="mt-6">
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-mute">
-                Pipeline notes (verbatim)
-              </p>
-              <ReasonList items={metrics.notes} />
-            </div>
-          )}
+        ) : (
+          <StatusBadge tone="neg" title="The backend refused to evaluate this run.">
+            refused · runnable false
+          </StatusBadge>
+        )
+      }
+      caption={`run_id: ${run.run_id} · strategy_version: ${run.strategy_version} · values render exactly as the API returned them (null → withheld, never 0)`}
+    >
+      {!run.runnable && (
+        <div className="mb-4">
+          <DataNotice tone="danger" title="Evaluation refused — runnable is false">
+            <span className="flex flex-col gap-2">
+              <span>
+                The backend refuses to treat this as a valid strategy evaluation until its
+                history gate is met. Nothing below is fabricated; the run&apos;s own warnings
+                are the reasons:
+              </span>
+              <ul className="space-y-2">
+                {run.warnings.map((warning) => (
+                  <li key={`${warning.code}-${warning.message}`} className="flex flex-wrap items-start gap-2 text-sm">
+                    <SeverityBadge severity={warning.severity} />
+                    <span className="min-w-0 flex-1">
+                      <span className="font-semibold text-warn">{warning.code}</span>{" "}
+                      <span className="text-ink">{warning.message}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </span>
+          </DataNotice>
         </div>
       )}
-    </section>
+
+      <dl className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-3">
+        <div>
+          <dt className="text-[11px] uppercase tracking-widest text-mute">Evaluation period</dt>
+          <dd className="font-mono text-sm font-medium tabular text-ink">
+            {formatDateShort(period.start_date)} → {formatDateShort(period.end_date)}
+          </dd>
+          {(period.start_date === null || period.end_date === null) && (
+            <dd className="mt-0.5 text-[11px] text-mute">
+              null boundary = no window of that kind stored for this run
+            </dd>
+          )}
+        </div>
+        <div>
+          <dt className="text-[11px] uppercase tracking-widest text-mute">Observations</dt>
+          <dd className="font-mono text-sm font-medium tabular text-ink">
+            {formatInt(run.observation_count)}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-[11px] uppercase tracking-widest text-mute">Completed trades</dt>
+          <dd className="font-mono text-sm font-medium tabular text-ink">
+            {formatInt(run.completed_trades)}
+          </dd>
+        </div>
+      </dl>
+
+      <div className="mt-6 border-t border-line pt-4">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-mute">
+          Performance figures {anyNull ? "(withheld)" : "(as returned by the quant service)"}
+        </p>
+        <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <p className="text-[11px] uppercase tracking-widest text-mute">Gross P&amp;L (₹)</p>
+            <MetricValue
+              value={run.gross_pnl}
+              kind="signed_rupees"
+              tone="sign"
+              unavailable="— withheld"
+              note="gross of costs"
+            />
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-widest text-mute">Estimated costs (₹)</p>
+            <MetricValue value={run.estimated_costs} kind="rupees" unavailable="— withheld" />
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-widest text-mute">Net P&amp;L (₹)</p>
+            <MetricValue
+              value={run.net_pnl}
+              kind="signed_rupees"
+              tone="sign"
+              unavailable="— withheld"
+            />
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-widest text-mute">Max drawdown (₹)</p>
+            <MetricValue value={run.max_drawdown} kind="rupees" unavailable="— withheld" />
+          </div>
+        </div>
+
+        {anyNull && (
+          <div className="mt-3">
+            <DataNotice tone="warn" title="Why the figures above are withheld — run warnings (verbatim)">
+              <span className="flex flex-col gap-2">
+                <span>
+                  A null means not computed — the quant side (costs, analytics) is not wired
+                  yet; the UI never fills it in.
+                </span>
+                <WithheldReasons warnings={run.warnings} />
+              </span>
+            </DataNotice>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-6 border-t border-line pt-4">
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-mute">
+          Assumptions (verbatim)
+        </p>
+        <ReasonList items={run.assumptions} empty="No assumptions were returned for this run." />
+      </div>
+    </SectionPanel>
   );
 }

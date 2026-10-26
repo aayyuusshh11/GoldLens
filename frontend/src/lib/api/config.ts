@@ -1,35 +1,41 @@
-import type { ReportSymbol } from "../../types/api";
-
 /**
  * Frontend runtime configuration — read once, cached. Only source is Vite
- * env vars (no secrets). The app NEVER silently downgrades from live mode to
- * fixture data: missing config in live mode is a hard configuration error
- * surfaced as a dedicated screen, not a fallback.
+ * env vars (no secrets).
+ *
+ * Mode rules (no silent fallbacks):
+ *  - VITE_DATA_MODE=fixture (unset also → fixture) → bundled diagnostic
+ *    fixtures that mirror the real backend's 1-trading-day responses.
+ *  - VITE_DATA_MODE=live → the real backend. An EMPTY VITE_API_BASE_URL is
+ *    legal and means same-origin requests through the Vite dev proxy
+ *    (`/api` → 127.0.0.1:8000, see vite.config.ts).
+ *
+ * The app never downgrades live → fixture, ever. Failures render as errors.
  */
 
 export type DataMode = "fixture" | "live";
 
-const KNOWN_SYMBOLS: readonly string[] = ["GOLD", "GOLDM"];
+/**
+ * Symbol filter identity — an OPEN string. Symbols come from ingested data
+ * (GET /api/pairs, GET /api/contracts); no closed enum is hardcoded.
+ */
+export type SymbolKey = string;
 
 function parseDataMode(value: string | undefined): DataMode {
   const normalized = (value ?? "").trim().toLowerCase();
   if (normalized === "live") return "live";
-  // Unset or unrecognized → fixture. Explicit in README: the demo runs on the
-  // supplied one-day diagnostic sample until the backend ships.
   return "fixture";
 }
 
-function parseDefaultSymbol(value: string | undefined): ReportSymbol {
-  const normalized = (value ?? "").trim().toUpperCase();
-  if (KNOWN_SYMBOLS.includes(normalized) && normalized === "GOLD") return "GOLD";
-  return "GOLDM";
+/** Symbols are uppercase open strings; a blank value stays blank. */
+function parseDefaultSymbol(value: string | undefined): SymbolKey {
+  return (value ?? "").trim().toUpperCase();
 }
 
 export interface AppConfig {
   mode: DataMode;
-  /** null in fixture mode; required (non-null) in live mode. */
+  /** null in fixture mode; "" (same-origin) or explicit URL in live mode. */
   baseUrl: string | null;
-  defaultSymbol: ReportSymbol;
+  defaultSymbol: SymbolKey;
   /** Simulated latency in fixture mode (0–5000 ms), for loading skeletons. */
   fixtureDelayMs: number;
 }
@@ -49,21 +55,16 @@ function clampDelay(raw: string | undefined): number {
   return Math.round(Math.min(parsed, 5000));
 }
 
+/**
+ * Note: live mode never requires an explicit URL — same-origin through the
+ * Vite dev proxy is the supported zero-config path for local development.
+ */
 export function loadAppConfig(): AppConfig {
   const mode = parseDataMode(import.meta.env.VITE_DATA_MODE);
-  const baseUrl = (import.meta.env.VITE_API_BASE_URL ?? "")
-    .trim()
-    .replace(/\/+$/, "");
-
-  if (mode === "live" && baseUrl === "") {
-    throw new ConfigError(
-      "VITE_DATA_MODE=live requires VITE_API_BASE_URL (frontend/.env). The app will not silently fall back to fixture data.",
-    );
-  }
-
+  const rawUrl = (import.meta.env.VITE_API_BASE_URL ?? "").trim().replace(/\/+$/, "");
   return {
     mode,
-    baseUrl: mode === "live" ? baseUrl : null,
+    baseUrl: mode === "live" ? rawUrl : null,
     defaultSymbol: parseDefaultSymbol(import.meta.env.VITE_DEFAULT_SYMBOL),
     fixtureDelayMs: clampDelay(import.meta.env.VITE_FIXTURE_DELAY_MS),
   };

@@ -1,14 +1,24 @@
 import { useState, type ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { Menu, RefreshCw, X } from "lucide-react";
-import { useReport } from "../../app/ReportContext";
-import { REPORT_SYMBOLS, type ReportSymbol } from "../../types/api";
+import { useApi } from "../../app/ApiContext";
 import { DataModePill } from "./DataModePill";
 import { FixtureBanner } from "./FixtureBanner";
 import { NAV_ITEMS, SidebarNav } from "./SidebarNav";
 
+/**
+ * Symbol selector feeds on the OPEN symbol set observed in the loaded data
+ * (pairs + contracts roots of the settled API) — never a closed enum.
+ */
 function SymbolSelector() {
-  const { symbol, setSymbol, source } = useReport();
+  const { symbols, symbol, setSymbol, source, pairs } = useApi();
+
+  const options = symbols.length > 0 ? symbols : symbol !== "" ? [symbol] : [];
+  const visiblePairCount =
+    pairs.key === "ready" && pairs.data !== null
+      ? pairs.data.pairs.filter((p) => p.symbol === symbol).length
+      : null;
+
   return (
     <label className="flex items-center gap-2">
       <span className="hidden text-[11px] font-semibold uppercase tracking-widest text-mute sm:inline">
@@ -16,29 +26,74 @@ function SymbolSelector() {
       </span>
       <select
         aria-label="Contract family"
-        value={symbol}
-        onChange={(event) => setSymbol(event.target.value as ReportSymbol)}
+        value={options.includes(symbol) ? symbol : ""}
+        onChange={(event) => setSymbol(event.target.value)}
         className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm text-ink hover:border-mute/60"
       >
-        {REPORT_SYMBOLS.map((option) => (
+        {options.length === 0 && <option value="">—</option>}
+        {options.map((option) => (
           <option key={option} value={option}>
             {option}
           </option>
         ))}
       </select>
+      {visiblePairCount !== null && (
+        <span className="hidden font-mono text-[11px] text-mute md:inline tabular">
+          {visiblePairCount} pair{visiblePairCount === 1 ? "" : "s"}
+        </span>
+      )}
       <span className="sr-only">
         {source.mode === "fixture"
-          ? "Fixture mode: only GOLDM has data in the bundled sample."
-          : "Switching family re-queries the backend report for that symbol."}
+          ? "Fixture mode: symbols come from the bundled one-day dataset."
+          : "Switching family re-filters the observed symbol set from the API."}
       </span>
     </label>
   );
 }
 
 function Header() {
-  const { refresh, entry } = useReport();
+  const {
+    dq,
+    contracts,
+    pairs,
+    history,
+    signal,
+    backtest,
+    pairId,
+    refreshDq,
+    refreshContracts,
+    refreshPairs,
+    refreshHistory,
+    refreshSignal,
+    refreshBacktest,
+  } = useApi();
   const [menuOpen, setMenuOpen] = useState(false);
-  const busy = entry.key === "loading" || (entry.key === "ready" && entry.refreshing);
+
+  const busy =
+    dq.key === "loading" ||
+    contracts.key === "loading" ||
+    pairs.key === "loading" ||
+    history.key === "loading" ||
+    signal.key === "loading" ||
+    backtest.key === "loading";
+  const refreshing =
+    dq.refreshing ||
+    contracts.refreshing ||
+    pairs.refreshing ||
+    history.refreshing ||
+    signal.refreshing ||
+    backtest.refreshing;
+
+  const reload = () => {
+    refreshDq();
+    refreshContracts();
+    refreshPairs();
+    if (pairId !== null) {
+      refreshHistory();
+      refreshSignal();
+      refreshBacktest();
+    }
+  };
 
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-base">
@@ -63,13 +118,13 @@ function Header() {
           <SymbolSelector />
           <button
             type="button"
-            aria-label="Reload report"
-            title="Reload report (bypasses the in-memory cache)"
-            onClick={refresh}
+            aria-label="Reload all data"
+            title="Reload all data (bypasses the in-memory cache)"
+            onClick={reload}
             disabled={busy}
             className="rounded-lg border border-line bg-surface p-2 text-mute hover:border-gold/60 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <RefreshCw className={`h-4 w-4 ${busy ? "opacity-60" : ""}`} aria-hidden />
+            <RefreshCw className={`h-4 w-4 ${busy || refreshing ? "opacity-60" : ""}`} aria-hidden />
           </button>
           <button
             type="button"
@@ -115,7 +170,7 @@ function Header() {
 
 /** App shell: sticky header, desktop sidebar, fixture banner, footer. */
 export function AppShell({ children }: { children: ReactNode }) {
-  const { source } = useReport();
+  const { source } = useApi();
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -138,8 +193,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               </p>
               <p className="font-mono">
                 {source.mode === "fixture"
-                  ? "data source: bundled sample fixture"
-                  : (source.config.baseUrl ?? "API base URL not set")}
+                  ? "data source: bundled fixture dataset"
+                  : source.config.baseUrl === ""
+                    ? "API: same-origin (dev proxy → 127.0.0.1:8000)"
+                    : (source.config.baseUrl ?? "API base URL not set")}
               </p>
             </footer>
           </div>

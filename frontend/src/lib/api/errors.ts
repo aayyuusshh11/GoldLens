@@ -8,18 +8,12 @@ export type ErrorKind =
 
 export interface AppError {
   kind: ErrorKind;
-  /** Machine-readable code when the API supplied one (error_code). */
+  /** Machine-readable code when the API supplied one (settled: error.code). */
   code: string | null;
   message: string;
   status: number | null;
   details: Record<string, unknown> | null;
 }
-
-const QUANT_ERROR_CODES = new Set([
-  "quant_error",
-  "invalid_input_schema",
-  "data_quality_rejected",
-]);
 
 export class ApiRequestError extends Error {
   readonly appError: AppError;
@@ -31,11 +25,6 @@ export class ApiRequestError extends Error {
   }
 }
 
-/** True when the code matches the quant boundary's documented error codes. */
-export function isQuantErrorCode(code: string): boolean {
-  return QUANT_ERROR_CODES.has(code);
-}
-
 /** Coerce any thrown value into the normalized AppError shape. */
 export function describeError(error: unknown): AppError {
   if (error instanceof ApiRequestError) return error.appError;
@@ -44,23 +33,27 @@ export function describeError(error: unknown): AppError {
 }
 
 /**
- * One neutral, honest hint per error code/kind — shown under the error
- * message. No hint when none applies (never invent causes).
+ * One neutral, honest hint per settled-contract code/kind — shown under the
+ * error message. Codes per docs/API_CONTRACT.md §0: invalid_input |
+ * not_found | data_unavailable | internal_error. No hint when none applies
+ * (never invent causes).
  */
-export function quantErrorHint(code: string): string | null {
+export function contractErrorHint(code: string): string | null {
   switch (code) {
-    case "data_quality_rejected":
-      return "The quant boundary rejected this dataset for the selected symbol (no tradable calendar pair on the latest session). Try another symbol in the header — see docs/METHODOLOGY.md.";
-    case "invalid_input_schema":
-      return "The request did not match the API contract (docs/API_CONTRACT.md). Check the symbol/query parameters.";
-    case "quant_error":
-      return "The quant pipeline failed internally — see the backend logs; the UI renders the failure verbatim.";
+    case "not_found":
+      return "The requested route or pair_id does not exist. Pair ids come from GET /api/pairs — refresh the pair list and retry.";
+    case "invalid_input":
+      return "The request did not match the API contract (dates must be YYYY-MM-DD; body fields per docs/API_CONTRACT.md).";
+    case "data_unavailable":
+      return "The backend storage is empty or unavailable. Ingest the CSV first: POST /api/ingest with the file path, or backend CLI.";
+    case "internal_error":
+      return "The backend failed while handling the request — see the backend logs; the UI renders the failure verbatim.";
     case "network":
-      return "The backend was not reachable. Start it (uvicorn app.main:app), verify VITE_API_BASE_URL, or switch to VITE_DATA_MODE=fixture for the bundled sample.";
+      return "The backend was not reachable. Start it (uvicorn app.main:app in backend/), verify VITE_API_BASE_URL / the dev proxy, or switch to VITE_DATA_MODE=fixture.";
     case "timeout":
-      return "The backend did not respond in time. If the report takes long on large datasets, the backend may need an async route.";
+      return "The backend did not respond in time. Slow ingests or cold DuckDB reads can cause this; retry.";
     case "schema":
-      return "The response did not match the API contract — possible backend drift; compare with docs/API_CONTRACT.md.";
+      return "The response did not match the API contract — possible backend drift; compare with backend/app/schemas (backend branch) and docs/API_CONTRACT.md.";
     case "http":
       return "The backend responded with an error status — see the code above and the backend logs.";
     default:

@@ -1,6 +1,6 @@
 import { RotateCcw } from "lucide-react";
 import type { AppError } from "../../lib/api/errors";
-import { quantErrorHint } from "../../lib/api/errors";
+import { contractErrorHint } from "../../lib/api/errors";
 import { StatusBadge } from "../layout/Badges";
 
 function stringifyValue(value: unknown): string {
@@ -31,7 +31,7 @@ export function ErrorState({
   hint?: string;
 }) {
   const detailEntries = Object.entries(error.details ?? {});
-  const suggestion = hint ?? quantErrorHint(error.code ?? error.kind);
+  const suggestion = hint ?? contractErrorHint(error.code ?? error.kind);
 
   return (
     <div role="alert" className="rounded-xl border border-neg/40 bg-surface px-4 py-4">
