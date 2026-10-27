@@ -34,6 +34,8 @@ All three workstreams are merged on the `final` branch; this file documents the 
 
 ## Quickstart
 
+**One-click (Windows):** `powershell -ExecutionPolicy Bypass -File .\start-dev.ps1` starts the backend (quant wired) and the frontend in live mode as two separate windows. Manually, or for other platforms:
+
 ### 0) Prerequisites
 - Node 22+, npm
 - Python 3.13+, pip

@@ -193,3 +193,25 @@ def test_openapi_loads_and_documents_routes(client_goldm: TestClient):
         "/api/ingest",
     ):
         assert route in paths, f"missing route {route}"
+
+
+# --- quant service warmup (integration seam) ------------------------------- #
+from app.services.quant_interface import ENV_QUANT_PACKAGE, warm_quant_service
+
+
+def test_warm_noop_without_env(monkeypatch):
+    monkeypatch.delenv(ENV_QUANT_PACKAGE, raising=False)
+    assert warm_quant_service() is False
+
+
+def test_warm_calls_wired_warmup(monkeypatch):
+    import sys
+    import types
+
+    calls: list[str] = []
+    fake = types.ModuleType("goldlens_fake_quant_pkg")
+    fake.warmup = lambda: calls.append("warm")
+    monkeypatch.setitem(sys.modules, "goldlens_fake_quant_pkg", fake)
+    monkeypatch.setenv(ENV_QUANT_PACKAGE, "goldlens_fake_quant_pkg")
+    assert warm_quant_service() is True
+    assert calls == ["warm"]

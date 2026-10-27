@@ -1,6 +1,9 @@
 """GoldLens data API — FastAPI application (docs/API_CONTRACT.md)."""
 from __future__ import annotations
 
+import threading
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
@@ -14,8 +17,19 @@ from app.api.routers import (
     signals_router,
 )
 from app.config import API_TITLE, API_VERSION
+from app.services.quant_interface import warm_quant_service
 
-app = FastAPI(title=API_TITLE, version=API_VERSION)
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Startup/teardown. Prewarms the quant service (GOLDLENS_QUANT_PACKAGE
+    set) in a daemon thread so the initial dataset load/validation never
+    lands in a request path — the first signal/backtest call is fast."""
+    threading.Thread(target=warm_quant_service, name="quant-warmup", daemon=True).start()
+    yield
+
+
+app = FastAPI(title=API_TITLE, version=API_VERSION, lifespan=lifespan)
 
 for _router in (
     health_router,

@@ -14,7 +14,13 @@ import { ApiRequestError } from "./errors";
  * - JSON parsing is defensive: malformed bodies surface as errors, never `any`.
  */
 
-export const REQUEST_TIMEOUT_MS = 30_000;
+/**
+ * 90s: the backend prewarms its quant dataset at startup (the cold load can
+ * take ~60s), and signal/backtest requests arriving during that window queue
+ * behind it. Any longer than this means the backend is genuinely stuck and an
+ * error is the honest response.
+ */
+export const REQUEST_TIMEOUT_MS = 90_000;
 
 export interface RequestOptions {
   /** Additional caller-controlled cancellation (e.g. React unmount). */

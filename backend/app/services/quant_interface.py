@@ -56,3 +56,26 @@ def load_quant_service() -> QuantService | None:
     except Exception as err:  # noqa: BLE001 — integration must not crash the API
         log.error("failed to load quant service %r: %s", package, err)
         return None
+
+
+def warm_quant_service() -> bool:
+    """Best-effort startup prewarming of the wired quant service.
+
+    Calls the wired package's optional ``warmup()`` (the service adapter
+    preloads + validates its dataset). Returns True only when a wired service
+    actually warmed up; False when unwired/unavailable — and NEVER raises:
+    startup must not fail because of the quant boundary.
+    """
+    package = os.environ.get(ENV_QUANT_PACKAGE, "").strip()
+    if not package:
+        return False
+    try:
+        module = importlib.import_module(package)
+        warm = getattr(module, "warmup", None)
+        if callable(warm):
+            warm()
+            return True
+        return False
+    except Exception as err:  # noqa: BLE001 — startup must not depend on quant
+        log.error("quant service warmup failed for %r: %s", package, err)
+        return False

@@ -98,6 +98,19 @@ _FRAME_CACHE: pd.DataFrame | None = None
 _FRAME_LOCK = threading.Lock()
 
 
+def warmup() -> None:
+    """Preload + validate the repo dataset before any request arrives.
+
+    Called by the backend during startup when this package is wired (see
+    backend/app/services/quant_interface.warm_quant_service): moves the
+    multi-second initial load/validation out of the request path, so the
+    first signal/backtest call is fast. The cache is process-local; new files
+    dropped after this loaded require a restart (by design — validated data
+    never silently changes under a running server).
+    """
+    load_frame()
+
+
 class GoldlensQuantService:
     """Quant-owned formulas; emits backend-shaped dicts, never raw engines."""
 
